@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Utility Geo Guess</title>
+
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet"/>
+
+<style>
+body {
+  margin:0;
+  font-family:system-ui,sans-serif;
+  background:#020617;
+  color:#e5e7eb;
+}
+
+.app { display:flex; height:100vh; }
+
+.image-panel {
+  width:40%;
+  padding:16px;
+}
+
+.image-panel img {
+  width:100%;
+  border-radius:8px;
+}
+
+.map-panel {
+  width:60%;
+  position:relative;
+}
+
+#map { position:absolute; inset:0; }
+
+.overlay {
+  position:absolute;
+  top:12px;
+  left:12px;
+  background:rgba(2,6,23,.85);
+  padding:10px 14px;
+  border-radius:6px;
+  font-size:14px;
+  z-index:5;
+}
+
+.restart {
+  position:absolute;
+  top:12px;
+  right:12px;
+  font-size:12px;
+  opacity:.7;
+  cursor:pointer;
+  z-index:6;
+}
+
+.center {
+  position:absolute;
+  left:50%;
+  transform:translateX(-50%);
+  top:80px;
+  display:none;
+  z-index:10;
+}
+
+.fullscreen {
+  position:absolute;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  background:rgba(2,6,23,.9);
+  z-index:20;
+}
+
+.card {
+  width:420px;
+  background:#020617;
+  padding:24px;
+  border-radius:8px;
+  text-align:center;
+}
+
+.card input {
+  width:100%;
+  padding:10px;
+  margin:6px 0;
+}
+
+.card button {
+  padding:10px 14px;
+  margin-top:10px;
+  cursor:pointer;
+}
+
+.logo-big img {
+  height:72px;
+  margin-bottom:12px;
+}
+
+.consent {
+  display:flex;
+  gap:8px;
+  font-size:13px;
+  text-align:left;
+  margin-top:8px;
+  align-items:flex-start;
+}
+
+.consent label {
+  cursor:pointer;
+}
+
+.form-error {
+  display:none;
+  color:#f87171;
+  font-size:13px;
+  margin-top:6px;
+  text-align:left;
+}
+
+.export-link {
+  position:absolute;
+  bottom:12px;
+  right:12px;
+  font-size:12px;
+  opacity:.6;
+  cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<div class="app">
+  <div class="image-panel">
+    <h2 id="roundTitle"></h2>
+    <img id="surveyImage">
+  </div>
+
+  <div class="map-panel">
+    <div id="map"></div>
+    <div class="overlay" id="timer"></div>
+    <div class="restart" onclick="location.reload()">Restart</div>
+
+    <!-- RULES -->
+    <div class="fullscreen" id="rulesPopup" style="display:flex;">
+      <div class="card">
+        <div class="logo-big"><img src="logo/logo.jpg"></div>
+        <h2>Utility Geo Guess</h2>
+        <p style="text-align:left;">
+          • 5 aerial survey images<br>
+          • Click on the map to guess the location<br>
+          • Lower total distance wins
+        </p>
+        <button onclick="startGame()">Start game</button>
+      </div>
+    </div>
+
+    <div class="center" id="roundPopup"></div>
+    <div class="fullscreen" id="finalForm"></div>
+    <div class="fullscreen" id="leaderboardPopup"></div>
+  </div>
+</div>
+
+<script>
+let rounds=[], map, round=0, total=0, active=false, timerId;
+let guessMarker, trueMarker;
+
+(async()=>{
+  const token=(await fetch("token.txt").then(r=>r.text())).replace(/\u0000/g,"").trim();
+  mapboxgl.accessToken=token;
+
+  const csv=await fetch("images/gps.csv").then(r=>r.text());
+  rounds=csv.trim().split(/\r?\n/).slice(1).map(l=>{
+    const [f,la,lo]=l.split(",");
+    return {file:f,lat:+la,lng:+lo};
+  });
+
+  map=new mapboxgl.Map({
+    container:"map",
+    style:"mapbox://styles/mapbox/dark-v11",
+    center:[-98,55],
+    zoom:3
+  });
+
+  map.on("click",onClick);
+})();
+
+function startGame(){
+  rulesPopup.style.display="none";
+  nextRound();
+}
+
+function nextRound(){
+  active=true;
+  roundPopup.style.display="none";
+  removeVisuals();
+  roundTitle.innerText=`Round ${round+1} / ${rounds.length}`;
+  surveyImage.src=`images/${rounds[round].file}`;
+  startTimer();
+}
+
+function startTimer(){
+  let t=45;
+  timer.innerText=`Time: ${t}`;
+  timerId=setInterval(()=>{
+    t--;
+    timer.innerText=`Time: ${t}`;
+    if(t<=0){
+      clearInterval(timerId);
+      active=false;
+      showRoundPopup(null);
+    }
+  },1000);
+}
+
+function onClick(e){
+  if(!active) return;
+  active=false;
+  clearInterval(timerId);
+
+  const r=rounds[round];
+  const d=distance(e.lngLat.lat,e.lngLat.lng,r.lat,r.lng);
+  total+=d;
+
+  showMarkers(e.lngLat,r);
+  drawLine(e.lngLat,r);
+
+  showRoundPopup(d);
+}
+
+function showRoundPopup(d){
+  roundPopup.style.display="block";
+  roundPopup.innerHTML=`
+    <div class="card">
+      <h3>Round result</h3>
+      <p>Distance: <b>${d?d.toFixed(1):"—"} km</b></p>
+      <p>Total: <b>${total.toFixed(1)} km</b></p>
+      <button onclick="next()">Next round</button>
+    </div>`;
+}
+
+function next(){
+  round++;
+  round<rounds.length ? nextRound() : showFinalForm();
+}
+
+function showFinalForm(){
+  const key=`leaderboard-${new Date().toISOString().slice(0,10)}`;
+  finalForm.style.display="flex";
+  finalForm.innerHTML=`
+    <div class="card">
+      <div class="logo-big"><img src="logo/logo.jpg"></div>
+      <h2>Your score</h2>
+      <h3>${total.toFixed(1)} km</h3>
+
+      <input id="name" placeholder="Name">
+      <input id="email" placeholder="Email">
+
+      <div class="consent">
+        <input type="checkbox" id="consent">
+        <label for="consent">I agree my details may be used to contact me</label>
+      </div>
+
+      <div id="formError" class="form-error">
+        Please complete all fields and accept the consent.
+      </div>
+
+      <button onclick="save('${key}')">Save score</button>
+    </div>`;
+}
+
+function save(key){
+  const error=document.getElementById("formError");
+  error.style.display="none";
+
+  const n=name.value.trim();
+  const e=email.value.trim();
+  const c=document.getElementById("consent").checked;
+
+  if(!n||!e||!c){
+    error.style.display="block";
+    return;
+  }
+
+  const d=JSON.parse(localStorage.getItem(key)||"[]");
+  d.push({name:n,email:e,score:total,time:new Date().toISOString()});
+  d.sort((a,b)=>a.score-b.score);
+  localStorage.setItem(key,JSON.stringify(d));
+
+  finalForm.style.display="none";
+  showLeaderboard(key);
+}
+
+function showLeaderboard(key){
+  const d=JSON.parse(localStorage.getItem(key)||"[]");
+  const rows=d.slice(0,5)
+    .map(x=>`<li>${x.name} – ${x.score.toFixed(1)} km</li>`)
+    .join("") || "<li>No entries yet</li>";
+
+  leaderboardPopup.style.display="flex";
+  leaderboardPopup.innerHTML=`
+    <div class="card">
+      <div class="logo-big"><img src="logo/logo.jpg"></div>
+      <h2>Leaderboard</h2>
+      <ol>${rows}</ol>
+      <button onclick="location.reload()">Start again</button>
+      <button onclick="showRules()">Rules</button>
+    </div>
+    <div class="export-link" onclick="exportCsv('${key}')">Export CSV</div>`;
+}
+
+function showRules(){
+  leaderboardPopup.style.display="none";
+  rulesPopup.style.display="flex";
+}
+
+function exportCsv(key){
+  const d=JSON.parse(localStorage.getItem(key)||"[]");
+  if(!d.length) return;
+  const csv=["Name,Email,Distance_km,Timestamp",
+    ...d.map(x=>`${x.name},${x.email},${x.score.toFixed(1)},${x.time}`)].join("\n");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([csv]));
+  a.download=`${key}.csv`;
+  a.click();
+}
+
+function showMarkers(guess,r){
+  removeVisuals();
+  guessMarker=new mapboxgl.Marker({color:"#f97316"})
+    .setLngLat(guess).addTo(map);
+  trueMarker=new mapboxgl.Marker({color:"#22c55e"})
+    .setLngLat([r.lng,r.lat]).addTo(map);
+}
+
+function drawLine(guess,r){
+  map.addSource("line",{
+    type:"geojson",
+    data:{type:"Feature",geometry:{type:"LineString",coordinates:[[guess.lng,guess.lat],[r.lng,r.lat]]}}
+  });
+  map.addLayer({id:"line",type:"line",source:"line",paint:{ "line-color":"#38bdf8","line-width":3 }});
+}
+
+function removeVisuals(){
+  guessMarker?.remove();
+  trueMarker?.remove();
+  if(map.getLayer("line")) map.removeLayer("line");
+  if(map.getSource("line")) map.removeSource("line");
+}
+
+function distance(a,b,c,d){
+  const R=6371;
+  const dl=(c-a)*Math.PI/180,do_=(d-b)*Math.PI/180;
+  const x=Math.sin(dl/2)**2+
+    Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*
+    Math.sin(do_/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+</script>
+
+</body>
+</html>
