@@ -2,46 +2,156 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Utility Geo Guess</title>
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet"/>
 
 <style>
-body {
-  margin:0;
-  font-family:system-ui,sans-serif;
-  background:#020617;
-  color:#e5e7eb;
+:root {
+  --bg:#020617;
+  --panel:#071021;
+  --text:#e5e7eb;
+  --muted:#94a3b8;
+  --brand:#8dc63f;
+  --guess:#f97316;
+  --answer:#22c55e;
+  --line:#38bdf8;
 }
 
-.app { display:flex; height:100vh; }
+* {
+  box-sizing:border-box;
+}
+
+html,
+body {
+  margin:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
+
+button,
+input {
+  font:inherit;
+}
+
+button {
+  min-height:44px;
+  padding:10px 16px;
+  border:0;
+  border-radius:9px;
+  cursor:pointer;
+}
+
+button:disabled {
+  opacity:.6;
+  cursor:default;
+}
+
+button.primary {
+  background:var(--brand);
+  color:#102008;
+  font-weight:700;
+}
+
+button.secondary {
+  background:#f8fafc;
+  color:#111827;
+}
+
+/* =========================================================
+   MAIN GAME
+   ========================================================= */
+
+.app {
+  display:flex;
+  width:100vw;
+  height:100dvh;
+}
 
 .image-panel {
   width:40%;
   padding:16px;
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+  background:var(--bg);
 }
 
-.image-panel img {
-  width:100%;
+.image-panel h2 {
+  margin:0 0 12px;
+}
+
+.image-viewport {
+  flex:1;
+  min-height:0;
+  position:relative;
+  overflow:hidden;
+  border-radius:10px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:#000814;
+  cursor:grab;
+  touch-action:none;
+}
+
+.image-viewport.dragging {
+  cursor:grabbing;
+}
+
+.image-viewport img {
+  max-width:100%;
+  max-height:100%;
+  object-fit:contain;
   border-radius:8px;
+  background:#000814;
+  user-select:none;
+  -webkit-user-drag:none;
+  transform-origin:center center;
+  will-change:transform;
+}
+
+.image-hint {
+  min-height:25px;
+  padding-top:7px;
+  font-size:12px;
+  color:var(--muted);
+  text-align:center;
 }
 
 .map-panel {
   width:60%;
   position:relative;
+  min-width:0;
 }
 
-#map { position:absolute; inset:0; }
+#map {
+  position:absolute;
+  inset:0;
+}
 
 .overlay {
   position:absolute;
-  top:12px;
-  left:12px;
-  background:rgba(2,6,23,.85);
-  padding:10px 14px;
-  border-radius:6px;
-  font-size:14px;
+  top:16px;
+  left:16px;
+  min-width:128px;
+  background:rgba(2,6,23,.92);
+  padding:13px 18px;
+  border:1px solid rgba(141,198,63,.48);
+  border-left:4px solid var(--brand);
+  border-radius:11px;
+  box-shadow:0 10px 28px rgba(0,0,0,.35);
+  font-size:20px;
+  font-weight:800;
+  letter-spacing:.02em;
+  text-align:center;
   z-index:5;
 }
 
@@ -49,316 +159,5821 @@ body {
   position:absolute;
   top:12px;
   right:12px;
+  padding:8px 10px;
+  border-radius:8px;
+  background:rgba(2,6,23,.78);
   font-size:12px;
-  opacity:.7;
+  opacity:.8;
   cursor:pointer;
   z-index:6;
 }
 
-.center {
-  position:absolute;
-  left:50%;
-  transform:translateX(-50%);
-  top:80px;
-  display:none;
-  z-index:10;
+.restart:hover {
+  opacity:1;
 }
 
-.fullscreen {
-  position:absolute;
+
+/* =========================================================
+   FINAL 10 SECOND COUNTDOWN
+   ========================================================= */
+
+.countdown-overlay {
+  position:fixed;
   inset:0;
   display:none;
   align-items:center;
   justify-content:center;
-  background:rgba(2,6,23,.9);
-  z-index:20;
+  z-index:40;
+  pointer-events:none;
 }
 
-.card {
-  width:420px;
-  background:#020617;
-  padding:24px;
-  border-radius:8px;
+.countdown-overlay.visible {
+  display:flex;
+}
+
+.countdown-number {
+  color:#ffffff;
+  font-size:clamp(220px,30vw,520px);
+  font-weight:900;
+  line-height:.78;
+  letter-spacing:-.08em;
   text-align:center;
+
+  text-shadow:
+    0 0 18px rgba(141,198,63,.72),
+    0 8px 40px rgba(0,0,0,.78);
+
+  opacity:0;
+  transform:scale(.88);
+}
+
+.countdown-number.tick {
+  animation:countdownFade .92s ease-out forwards;
+}
+
+.countdown-overlay.danger .countdown-number {
+  text-shadow:
+    0 0 20px rgba(249,115,22,.82),
+    0 8px 42px rgba(0,0,0,.82);
+}
+
+@keyframes countdownFade {
+  0% {
+    opacity:1;
+    transform:scale(.88);
+  }
+  45% {
+    opacity:.92;
+    transform:scale(1);
+  }
+  100% {
+    opacity:0;
+    transform:scale(1.18);
+  }
+}
+
+
+/* =========================================================
+   ROUND RESULT
+   ========================================================= */
+
+.round-result {
+  position:absolute;
+  left:50%;
+  top:72px;
+  transform:translateX(-50%);
+  display:none;
+  z-index:15;
+  pointer-events:none;
+}
+
+.round-result .card {
+  width:340px;
+  padding:22px 26px;
+  background:linear-gradient(145deg,rgba(7,16,33,.96),rgba(2,6,23,.94));
+  border:1px solid rgba(141,198,63,.38);
+  border-top:3px solid var(--brand);
+  border-radius:16px;
+  box-shadow:0 18px 50px rgba(0,0,0,.55);
+  text-align:center;
+  backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);
+  pointer-events:auto;
+}
+
+.round-result h3 {
+  margin:0 0 14px;
+  font-size:21px;
+  color:#f8fafc;
+}
+
+.round-result p {
+  margin:8px 0;
+  font-size:15px;
+  color:#cbd5e1;
+}
+
+.round-result p b { color:#fff; }
+
+.round-result button {
+  min-width:130px;
+  margin-top:14px;
+}
+
+/* =========================================================
+   FULLSCREEN LANDING / RULES SCREEN
+   ========================================================= */
+
+.landing-screen {
+  position:fixed;
+  inset:0;
+  z-index:80;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  padding:24px;
+
+  background-image:url("landing/landing.png");
+  background-size:cover;
+  background-position:center;
+  background-repeat:no-repeat;
+}
+
+.landing-screen.hidden {
+  display:none;
+}
+
+.landing-card {
+  width:min(520px, calc(100vw - 48px));
+  padding:38px 42px 34px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(7,16,33,.94),
+      rgba(2,6,23,.91)
+    );
+
+  border:1px solid rgba(141,198,63,.38);
+  border-top:3px solid var(--brand);
+
+  border-radius:22px;
+
+  box-shadow:
+    0 28px 80px rgba(0,0,0,.52),
+    inset 0 1px 0 rgba(255,255,255,.04);
+
+  text-align:center;
+
+  backdrop-filter:blur(7px);
+  -webkit-backdrop-filter:blur(7px);
+}
+
+.landing-card h2 {
+  margin:0;
+  font-size:34px;
+  font-weight:750;
+  letter-spacing:-0.5px;
+  color:#f8fafc;
+}
+
+/* Small location-pin divider below title */
+
+.landing-card h2::after {
+  content:"●";
+  display:block;
+
+  width:160px;
+  margin:18px auto 4px;
+
+  color:var(--brand);
+  font-size:12px;
+  line-height:1px;
+
+  border-bottom:1px solid rgba(141,198,63,.55);
+  padding-bottom:0;
+}
+
+/* Rules */
+
+.landing-card .rules {
+  margin:28px auto 26px;
+  max-width:390px;
+
+  display:grid;
+  gap:14px;
+
+  text-align:left;
+  line-height:1.45;
+
+  color:#e5e7eb;
+  font-size:15px;
+}
+
+/* Turn each rule into a clean row */
+
+.landing-card .rule-item {
+  display:flex;
+  align-items:flex-start;
+  gap:13px;
+}
+
+.landing-card .rule-icon {
+  flex:0 0 28px;
+
+  width:28px;
+  height:28px;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  border:1px solid rgba(141,198,63,.55);
+  border-radius:7px;
+
+  color:var(--brand);
+  font-size:15px;
+  font-weight:700;
+}
+
+.landing-card .rule-text {
+  padding-top:3px;
+}
+
+/* Buttons */
+
+.landing-card .button-row {
+  margin-top:26px;
+  gap:12px;
+}
+
+.landing-card .button-row button {
+  min-width:145px;
+  min-height:48px;
+  padding:11px 22px;
+
+  font-size:15px;
+  border-radius:10px;
+
+  transition:
+    transform .15s ease,
+    box-shadow .15s ease,
+    background .15s ease;
+}
+
+.landing-card .button-row button:hover {
+  transform:translateY(-1px);
+}
+
+.landing-card .button-row .primary {
+  box-shadow:
+    0 6px 20px rgba(141,198,63,.18);
+}
+
+.landing-card .button-row .secondary {
+  background:rgba(248,250,252,.96);
+}
+
+/* Loading / status */
+
+.landing-card .loading-message {
+  margin-top:16px;
+  min-height:18px;
+
+  color:#94a3b8;
+  font-size:12px;
+}
+
+/* No second NM logo on landing card */
+
+.landing-logo {
+  display:none;
+}
+
+/* Tablet */
+
+@media (max-width:1100px) {
+
+  .landing-card {
+    width:min(500px, calc(100vw - 40px));
+    padding:34px 36px 30px;
+  }
+
+  .landing-card h2 {
+    font-size:31px;
+  }
+}
+
+/* Portrait iPad */
+
+@media (orientation:portrait) and (max-width:900px) {
+
+  .landing-screen {
+    padding:20px;
+  }
+
+  .landing-card {
+    width:min(480px, calc(100vw - 32px));
+    padding:32px 30px;
+  }
+}
+
+/* =========================================================
+   GENERIC CARDS / FORMS
+   ========================================================= */
+
+.card {
+  width:min(460px, calc(100vw - 48px));
+  background:var(--bg);
+  padding:28px;
+  border-radius:18px;
+  text-align:center;
+  box-shadow:0 20px 50px rgba(0,0,0,.55);
+  border-top:4px solid var(--brand);
+}
+
+.card h2,
+.card h3 {
+  margin-top:10px;
 }
 
 .card input {
   width:100%;
-  padding:10px;
+  min-height:46px;
+  padding:10px 12px;
   margin:6px 0;
+  border:1px solid #cbd5e1;
+  border-radius:7px;
+  background:#fff;
+  color:#111827;
 }
 
-.card button {
-  padding:10px 14px;
-  margin-top:10px;
-  cursor:pointer;
-}
-
-.logo-big img {
-  height:72px;
-  margin-bottom:12px;
+.button-row {
+  display:flex;
+  gap:12px;
+  justify-content:center;
+  flex-wrap:wrap;
+  margin-top:14px;
 }
 
 .consent {
   display:flex;
-  gap:8px;
+  gap:10px;
   font-size:13px;
   text-align:left;
-  margin-top:8px;
+  margin-top:10px;
   align-items:flex-start;
 }
 
-.consent label {
-  cursor:pointer;
+.consent input {
+  width:auto;
+  min-height:auto;
+  margin-top:3px;
 }
+
+.consent label { cursor:pointer; }
 
 .form-error {
   display:none;
   color:#f87171;
   font-size:13px;
-  margin-top:6px;
+  margin-top:8px;
   text-align:left;
+}
+
+.loading-message {
+  margin-top:12px;
+  color:var(--muted);
+  font-size:13px;
+  min-height:20px;
+}
+
+
+/* =========================================================
+   ROUND FEEDBACK / FINAL HISTORY / RANK CELEBRATION
+   ========================================================= */
+
+.round-feedback {
+  margin:0 0 10px;
+  color:var(--brand);
+  font-size:23px;
+  font-weight:900;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+
+.round-distance {
+  margin:4px 0 2px;
+  color:#fff;
+  font-size:34px;
+  font-weight:850;
+  letter-spacing:-.03em;
+}
+
+.round-total {
+  margin:6px 0 0;
+  color:#cbd5e1;
+  font-size:14px;
+}
+
+.round-history {
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:8px;
+  max-width:610px;
+  margin:22px auto 24px;
+}
+
+.round-history-item {
+  min-width:0;
+  padding:11px 8px;
+  border:1px solid rgba(148,163,184,.16);
+  border-radius:10px;
+  background:rgba(15,23,42,.52);
+}
+
+.round-history-round {
+  color:#64748b;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+
+.round-history-score {
+  margin-top:5px;
+  color:#f8fafc;
+  font-size:16px;
+  font-weight:800;
+  white-space:nowrap;
+}
+
+.round-history-comment {
+  margin-top:4px;
+  overflow:hidden;
+  color:var(--brand);
+  font-size:9px;
+  font-weight:800;
+  line-height:1.2;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.player-position {
+  margin:2px auto 6px;
+  color:#f8fafc;
+  font-size:clamp(24px,3vw,40px);
+  font-weight:900;
+  letter-spacing:-.03em;
+}
+
+.player-position span {
+  color:var(--brand);
+}
+
+.prize-message {
+  max-width:560px;
+  margin:12px auto 0;
+  padding:10px 14px;
+  border:1px solid rgba(141,198,63,.38);
+  border-radius:10px;
+  background:rgba(141,198,63,.08);
+  color:var(--brand);
+  font-size:14px;
+  font-weight:850;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+
+.rank-celebration {
+  margin:0 auto 12px;
+  color:var(--brand);
+  font-size:clamp(38px,6vw,72px);
+  font-weight:950;
+  line-height:.95;
+  letter-spacing:-.05em;
+  text-transform:uppercase;
+  animation:rankPop .7s cubic-bezier(.16,.9,.3,1.2);
+}
+
+.rank-celebration-sub {
+  margin:8px 0 18px;
+  color:#fff;
+  font-size:18px;
+  font-weight:800;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+
+.end-card.celebrate {
+  animation:cardGlow 1.15s ease-out;
+}
+
+@keyframes rankPop {
+  0% { opacity:0; transform:scale(.58); }
+  65% { opacity:1; transform:scale(1.08); }
+  100% { opacity:1; transform:scale(1); }
+}
+
+@keyframes cardGlow {
+  0% {
+    box-shadow:
+      0 0 0 0 rgba(141,198,63,.0),
+      0 28px 80px rgba(0,0,0,.55);
+  }
+  35% {
+    box-shadow:
+      0 0 0 12px rgba(141,198,63,.14),
+      0 0 65px rgba(141,198,63,.28),
+      0 28px 80px rgba(0,0,0,.55);
+  }
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(141,198,63,.0),
+      0 28px 80px rgba(0,0,0,.55);
+  }
+}
+
+.attract-stats {
+  position:absolute;
+  left:50%;
+  bottom:108px;
+  transform:translateX(-50%);
+  z-index:5;
+  display:none;
+  max-width:calc(100vw - 48px);
+  padding:10px 18px;
+  border:1px solid rgba(141,198,63,.55);
+  border-radius:999px;
+  background:rgba(2,6,23,.80);
+  color:#f8fafc;
+  box-shadow:0 12px 34px rgba(0,0,0,.28);
+  backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);
+  font-size:clamp(13px,1.4vw,19px);
+  font-weight:800;
+  letter-spacing:.03em;
+  text-align:center;
+  white-space:nowrap;
+}
+
+.attract-stats strong {
+  color:var(--brand);
+}
+
+@media (max-width:800px) {
+  .round-history {
+    grid-template-columns:repeat(5,minmax(72px,1fr));
+    overflow-x:auto;
+    justify-content:start;
+  }
+
+  .attract-stats {
+    bottom:100px;
+    white-space:normal;
+  }
+}
+
+/* =========================================================
+   GAME COMPLETE / LEADERBOARD FULLSCREEN
+   ========================================================= */
+
+.end-screen {
+  position:fixed;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  z-index:90;
+  padding:24px;
+  background:
+    linear-gradient(rgba(2,6,23,.52),rgba(2,6,23,.68)),
+    url("landing/landing.png");
+  background-size:cover;
+  background-position:center;
+  background-repeat:no-repeat;
+}
+
+.end-card {
+  width:min(700px, calc(100vw - 48px));
+  padding:38px 42px 34px;
+  background:linear-gradient(145deg,rgba(7,16,33,.96),rgba(2,6,23,.94));
+  border:1px solid rgba(141,198,63,.38);
+  border-top:3px solid var(--brand);
+  border-radius:22px;
+  box-shadow:0 28px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.04);
+  text-align:center;
+  backdrop-filter:blur(7px);
+  -webkit-backdrop-filter:blur(7px);
+}
+
+.end-kicker {
+  color:var(--brand);
+  font-size:13px;
+  font-weight:800;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+}
+
+.end-card h2 {
+  margin:10px 0 8px;
+  font-size:34px;
+  color:#f8fafc;
+}
+
+.final-score {
+  margin:4px 0 0;
+  font-size:clamp(52px,7vw,78px);
+  line-height:1;
+  font-weight:800;
+  color:#fff;
+  letter-spacing:-.04em;
+}
+
+.final-score span {
+  font-size:.34em;
+  font-weight:700;
+  letter-spacing:0;
+  color:#cbd5e1;
+}
+
+.score-comment {
+  margin:16px 0 4px;
+  color:var(--brand);
+  font-size:21px;
+  font-weight:800;
+  letter-spacing:.03em;
+}
+
+.score-subtitle {
+  margin:0 auto 24px;
+  max-width:430px;
+  color:#94a3b8;
+  font-size:14px;
+}
+
+.end-form {
+  max-width:500px;
+  margin:0 auto;
+}
+
+.end-form input[type="text"],
+.end-form input[type="email"] {
+  width:100%;
+  min-height:48px;
+  margin:6px 0;
+  padding:11px 13px;
+  border:1px solid #cbd5e1;
+  border-radius:8px;
+  background:#fff;
+  color:#111827;
+}
+
+.end-form .consent {
+  margin:12px 2px 0;
+}
+
+.end-form .form-error {
+  margin:10px 2px 0;
+}
+
+.leaderboard-list {
+  display:grid;
+  gap:9px;
+  max-width:560px;
+  margin:24px auto 6px;
+}
+
+.leaderboard-row {
+  display:grid;
+  grid-template-columns:42px 1fr auto;
+  gap:12px;
+  align-items:center;
+  min-height:50px;
+  padding:10px 14px;
+  border:1px solid rgba(148,163,184,.15);
+  border-radius:10px;
+  background:rgba(15,23,42,.48);
+  text-align:left;
+}
+
+.leaderboard-row.current {
+  border-color:rgba(141,198,63,.75);
+  background:rgba(141,198,63,.10);
+  box-shadow:inset 3px 0 0 var(--brand);
+}
+
+.leaderboard-rank {
+  color:var(--brand);
+  font-weight:800;
+  font-size:18px;
+}
+
+.leaderboard-name {
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-weight:700;
+  color:#f8fafc;
+}
+
+.leaderboard-score {
+  color:#cbd5e1;
+  font-weight:700;
+}
+
+.leaderboard-empty {
+  margin:30px auto;
+  color:#cbd5e1;
+  font-size:18px;
 }
 
 .export-link {
   position:absolute;
-  bottom:12px;
-  right:12px;
+  bottom:14px;
+  right:16px;
   font-size:12px;
-  opacity:.6;
+  opacity:.55;
   cursor:pointer;
+  z-index:92;
+}
+
+.export-link:hover {
+  opacity:1;
+  text-decoration:underline;
+}
+
+/* =========================================================
+   ADMIN
+   ========================================================= */
+
+.admin-screen {
+  position:fixed;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  z-index:110;
+  padding:24px;
+  background:rgba(2,6,23,.92);
+  overflow:auto;
+}
+
+.admin-shell {
+  width:min(980px, calc(100vw - 48px));
+  max-height:calc(100dvh - 48px);
+  overflow:auto;
+  padding:30px;
+  background:linear-gradient(145deg,rgba(7,16,33,.98),rgba(2,6,23,.98));
+  border:1px solid rgba(141,198,63,.35);
+  border-top:3px solid var(--brand);
+  border-radius:20px;
+  box-shadow:0 28px 80px rgba(0,0,0,.62);
+}
+
+.admin-shell h2,
+.admin-shell h3 {
+  margin-top:0;
+}
+
+.admin-header {
+  display:flex;
+  justify-content:space-between;
+  gap:16px;
+  align-items:center;
+  margin-bottom:22px;
+}
+
+.admin-grid {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:18px;
+}
+
+.admin-section {
+  padding:18px;
+  border:1px solid rgba(148,163,184,.16);
+  border-radius:14px;
+  background:rgba(15,23,42,.46);
+}
+
+.admin-section.full {
+  grid-column:1 / -1;
+}
+
+.admin-field {
+  margin:12px 0;
+  text-align:left;
+}
+
+.admin-field label {
+  display:block;
+  margin-bottom:6px;
+  color:#cbd5e1;
+  font-size:13px;
+  font-weight:700;
+}
+
+.admin-field input,
+.admin-field select {
+  width:100%;
+  min-height:44px;
+  padding:9px 11px;
+  border:1px solid #475569;
+  border-radius:8px;
+  background:#fff;
+  color:#111827;
+}
+
+.admin-inline {
+  display:grid;
+  grid-template-columns:1fr 1fr auto;
+  gap:10px;
+  align-items:end;
+}
+
+.admin-actions {
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-top:14px;
+}
+
+.admin-device-id {
+  padding:9px 11px;
+  border-radius:8px;
+  background:#020617;
+  color:#94a3b8;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:12px;
+  word-break:break-all;
+}
+
+.admin-list {
+  display:grid;
+  gap:8px;
+  margin-top:12px;
+}
+
+.admin-list-row {
+  display:grid;
+  grid-template-columns:1.4fr 1fr 1fr auto;
+  gap:10px;
+  align-items:center;
+  padding:9px 10px;
+  border-radius:9px;
+  background:rgba(2,6,23,.55);
+  color:#cbd5e1;
+  font-size:13px;
+}
+
+.admin-muted {
+  color:#94a3b8;
+  font-size:12px;
+}
+
+.admin-status {
+  min-height:20px;
+  margin-top:10px;
+  color:var(--brand);
+  font-size:13px;
+}
+
+.admin-login {
+  width:min(430px,calc(100vw - 48px));
+}
+
+.admin-login input {
+  width:100%;
+  min-height:46px;
+  margin:6px 0;
+  padding:10px 12px;
+  border-radius:8px;
+  border:1px solid #cbd5e1;
+}
+
+
+.offline-status-box {
+  margin-top:12px;
+  padding:12px 14px;
+  border:1px solid rgba(148,163,184,.18);
+  border-radius:10px;
+  background:rgba(2,6,23,.52);
+}
+
+.offline-status-line {
+  display:flex;
+  justify-content:space-between;
+  gap:14px;
+  margin:5px 0;
+  color:#cbd5e1;
+  font-size:13px;
+}
+
+.offline-status-line strong { color:#f8fafc; }
+
+.offline-progress {
+  width:100%;
+  height:8px;
+  margin-top:10px;
+  overflow:hidden;
+  border-radius:999px;
+  background:#1e293b;
+}
+
+.offline-progress-bar {
+  width:0%;
+  height:100%;
+  background:var(--brand);
+  transition:width .15s linear;
+}
+
+.offline-note {
+  margin-top:9px;
+  color:#94a3b8;
+  font-size:12px;
+  line-height:1.45;
+}
+
+@media (max-width:800px) {
+  .admin-grid { grid-template-columns:1fr; }
+  .admin-section.full { grid-column:auto; }
+  .admin-inline { grid-template-columns:1fr; }
+  .admin-list-row { grid-template-columns:1fr; }
+}
+
+/* =========================================================
+   ATTRACT / SCREENSAVER
+   ========================================================= */
+
+.attract-mode {
+  position:fixed;
+  inset:0;
+  display:none;
+  z-index:100;
+  background:#020617;
+  color:#fff;
+  overflow:hidden;
+  cursor:pointer;
+}
+
+.attract-slide {
+  position:absolute;
+  inset:0;
+
+  background-size:contain;
+  background-position:center;
+  background-repeat:no-repeat;
+  background-color:#020617;
+
+  opacity:0;
+
+  transition:opacity .8s ease;
+}
+
+.attract-slide.active {
+  opacity:1;
+}
+
+.attract-fallback {
+  position:absolute;
+  inset:0;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  text-align:center;
+
+  padding:40px;
+
+  background:
+    radial-gradient(
+      circle at center,
+      rgba(141,198,63,.12),
+      transparent 42%
+    ),
+    #020617;
+}
+
+.attract-fallback img {
+  height:130px;
+  max-width:60vw;
+  object-fit:contain;
+  margin-bottom:22px;
+}
+
+.attract-fallback h1 {
+  font-size:clamp(34px,5vw,72px);
+  margin:10px 0;
+}
+
+.attract-fallback p {
+  font-size:clamp(18px,2vw,30px);
+  color:#cbd5e1;
+}
+
+.attract-touch {
+  position:absolute;
+  left:50%;
+  bottom:36px;
+
+  transform:translateX(-50%);
+
+  z-index:4;
+
+  padding:14px 24px;
+
+  border-radius:999px;
+
+  background:rgba(2,6,23,.78);
+
+  border:1px solid rgba(141,198,63,.7);
+
+  font-size:clamp(16px,1.8vw,24px);
+
+  font-weight:700;
+}
+
+/* =========================================================
+   iPAD / TABLET
+   ========================================================= */
+
+@media (max-width:1100px) {
+
+  .image-panel {
+    width:44%;
+    padding:12px;
+  }
+
+  .map-panel {
+    width:56%;
+  }
+
+  .card {
+    padding:24px;
+  }
+
+  .round-result {
+    top:62px;
+  }
+
+  .landing-card {
+    width:min(460px,calc(100vw - 40px));
+    padding:26px;
+  }
+}
+
+@media (orientation:portrait) and (max-width:900px) {
+
+  .app {
+    flex-direction:column;
+  }
+
+  .image-panel {
+    width:100%;
+    height:46%;
+    padding:10px 12px;
+  }
+
+  .map-panel {
+    width:100%;
+    height:54%;
+  }
+
+  .image-panel h2 {
+    font-size:18px;
+    margin-bottom:7px;
+  }
+
+  .image-hint {
+    font-size:11px;
+  }
+
+  .fullscreen {
+    position:fixed;
+  }
+
+  .round-result {
+    top:58px;
+  }
+
+  .landing-screen {
+    padding:20px;
+  }
+
+  .landing-card {
+    width:min(440px,calc(100vw - 32px));
+  }
 }
 </style>
 </head>
 
 <body>
 
+<!-- =======================================================
+     GAME
+     ======================================================= -->
+
 <div class="app">
+
   <div class="image-panel">
+
     <h2 id="roundTitle"></h2>
-    <img id="surveyImage">
+
+    <div
+      class="image-viewport"
+      id="imageViewport"
+    >
+      <img
+        id="surveyImage"
+        alt="Aerial survey image"
+      >
+    </div>
+
+    <div
+      class="image-hint"
+      id="imageHint"
+      style="visibility:hidden;"
+    >
+      Pinch or scroll to zoom · Drag to pan · Double-tap/click to reset
+    </div>
+
   </div>
 
   <div class="map-panel">
-    <div id="map"></div>
-    <div class="overlay" id="timer"></div>
-    <div class="restart" onclick="location.reload()">Restart</div>
 
-    <!-- RULES -->
-    <div class="fullscreen" id="rulesPopup" style="display:flex;">
-      <div class="card">
-        <div class="logo-big"><img src="logo/logo.jpg"></div>
-        <h2>Utility Geo Guess</h2>
-        <p style="text-align:left;">
-          • 5 aerial survey images<br>
-          • Click on the map to guess the location<br>
-          • Lower total distance wins
-        </p>
-        <button onclick="startGame()">Start game</button>
-      </div>
+    <div id="map"></div>
+
+    <div
+      class="overlay"
+      id="timer"
+      style="display:none;"
+    ></div>
+
+    <div
+      class="restart"
+      onclick="resetGame()"
+    >
+      Restart
     </div>
 
-    <div class="center" id="roundPopup"></div>
-    <div class="fullscreen" id="finalForm"></div>
-    <div class="fullscreen" id="leaderboardPopup"></div>
+    <div
+      class="round-result"
+      id="roundPopup"
+    ></div>
+
+
   </div>
+
+</div>
+
+<!-- =======================================================
+     FINAL 10 SECOND COUNTDOWN
+     ======================================================= -->
+
+<div class="countdown-overlay" id="countdownOverlay" aria-hidden="true">
+  <div class="countdown-number" id="countdownNumber">10</div>
+</div>
+
+<!-- =======================================================
+     FULLSCREEN GAME COMPLETE / LEADERBOARD
+     ======================================================= -->
+
+<div class="end-screen" id="finalForm"></div>
+<div class="end-screen" id="leaderboardPopup"></div>
+
+<!-- =======================================================
+     FULLSCREEN LANDING SCREEN
+     ======================================================= -->
+
+<div
+  class="landing-screen"
+  id="landingScreen"
+>
+
+  <div class="landing-card">
+
+    <h2>Utility Geo Guess</h2>
+
+    <div class="rules">
+
+      <div class="rule-item">
+        <div class="rule-icon">01</div>
+        <div class="rule-text">
+          Five aerial survey images
+        </div>
+      </div>
+
+      <div class="rule-item">
+        <div class="rule-icon">02</div>
+        <div class="rule-text">
+          Tap the map to guess each location
+        </div>
+      </div>
+
+      <div class="rule-item">
+        <div class="rule-icon">03</div>
+        <div class="rule-text">
+          Your score is your total distance from the correct locations
+        </div>
+      </div>
+
+      <div class="rule-item">
+        <div class="rule-icon">04</div>
+        <div class="rule-text">
+          Lowest total distance wins
+        </div>
+      </div>
+
+    </div>
+
+    <div class="button-row">
+
+      <button
+        class="primary"
+        id="startButton"
+        onclick="startGame()"
+      >
+        Start game
+      </button>
+
+      <button
+        class="secondary"
+        onclick="openScoreboard()"
+      >
+        Leaderboard
+      </button>
+
+    </div>
+
+    <div
+      class="loading-message"
+      id="loadingMessage"
+    ></div>
+
+  </div>
+
+  <div class="export-link" onclick="openAdmin()">
+    Admin
+  </div>
+
+</div>
+
+<!-- =======================================================
+     ADMIN
+     ======================================================= -->
+
+<div class="admin-screen" id="adminScreen"></div>
+
+<!-- =======================================================
+     ATTRACT / SCREENSAVER
+     ======================================================= -->
+
+<div
+  class="attract-mode"
+  id="attractMode"
+  aria-label="Attract mode"
+>
+
+  <div id="attractSlides"></div>
+
+  <div
+    class="attract-fallback"
+    id="attractFallback"
+  >
+
+    <div>
+
+      <img
+        src="logo/logo.jpg"
+        alt="NM Group"
+      >
+
+      <h1>
+        Can you find the survey?
+      </h1>
+
+      <p>
+        Five images. Five guesses. Lowest distance wins.
+      </p>
+
+    </div>
+
+  </div>
+
+  <div class="attract-stats" id="attractStats"></div>
+
+  <div class="attract-touch">
+    Touch anywhere to play
+  </div>
+
 </div>
 
 <script>
-let rounds=[], map, round=0, total=0, active=false, timerId;
-let guessMarker, trueMarker;
 
-(async()=>{
-  const token=(await fetch("token.txt").then(r=>r.text())).replace(/\u0000/g,"").trim();
-  mapboxgl.accessToken=token;
+/* =========================================================
+   CONFIG
+   ========================================================= */
 
-  const csv=await fetch("images/gps.csv").then(r=>r.text());
-  rounds=csv.trim().split(/\r?\n/).slice(1).map(l=>{
-    const [f,la,lo]=l.split(",");
-    return {file:f,lat:+la,lng:+lo};
-  });
+const GAME_ROUNDS = 5;
+const ROUND_TIME = 45;
+const IDLE_TIMEOUT_MS = 60000;
+const DEFAULT_SLIDE_MS = 8000;
 
-  map=new mapboxgl.Map({
-    container:"map",
-    style:"mapbox://styles/mapbox/dark-v11",
-    center:[-98,55],
-    zoom:3
-  });
+// Maximum possible great-circle distance on Earth.
+// Used as the penalty when a player does not answer a round.
+const EARTH_RADIUS_KM = 6371;
+const TIMEOUT_PENALTY_KM = Math.PI * EARTH_RADIUS_KM;
 
-  map.on("click",onClick);
-})();
+// UI uses miles, while Supabase continues storing kilometres.
+const KM_TO_MILES = 0.621371;
 
-function startGame(){
-  rulesPopup.style.display="none";
-  nextRound();
+function kmToMiles(km){
+  return Number(km) * KM_TO_MILES;
 }
 
-function nextRound(){
-  active=true;
-  roundPopup.style.display="none";
-  removeVisuals();
-  roundTitle.innerText=`Round ${round+1} / ${rounds.length}`;
-  surveyImage.src=`images/${rounds[round].file}`;
-  startTimer();
+function milesToKm(miles){
+  return Number(miles) / KM_TO_MILES;
 }
 
-function startTimer(){
-  let t=45;
-  timer.innerText=`Time: ${t}`;
-  timerId=setInterval(()=>{
-    t--;
-    timer.innerText=`Time: ${t}`;
-    if(t<=0){
-      clearInterval(timerId);
-      active=false;
-      showRoundPopup(null);
+const SUPABASE_URL = "https://esmcditvohcfhudzqpcj.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_FEpT8bXFioBeRj6Ibh3CSg_LP4E_xBk";
+
+const db = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY
+);
+
+const DEVICE_KEY_STORAGE = "utility-geo-guess-device-key";
+const PENDING_SCORES_STORAGE = "utility-geo-guess-pending-scores";
+
+function getOrCreateDeviceKey(){
+  let key = localStorage.getItem(DEVICE_KEY_STORAGE);
+  if(key) return key;
+
+  key = crypto.randomUUID
+    ? crypto.randomUUID()
+    : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{
+        const r = Math.random()*16|0;
+        const v = c === "x" ? r : (r&0x3|0x8);
+        return v.toString(16);
+      });
+
+  localStorage.setItem(DEVICE_KEY_STORAGE,key);
+  return key;
+}
+
+const DEVICE_KEY = getOrCreateDeviceKey();
+let gameConfig = {
+  is_kiosk:false,
+  kiosk_name:null,
+  event_id:null,
+  event_name:"Global",
+  leaderboard_scope:"global"
+};
+
+let adminState = {
+  events:[],
+  reps:[],
+  kiosks:[],
+  settings:null
+};
+
+
+/* =========================================================
+   GAME STATE
+   ========================================================= */
+
+let allRounds = [];
+let gameRounds = [];
+
+let map;
+
+let round = 0;
+let total = 0;
+
+let roundResults = [];
+let lastPlayerPosition = null;
+
+let active = false;
+
+let timerId = null;
+
+let guessMarker = null;
+let trueMarker = null;
+
+let appReady = false;
+
+let currentMode = "rules";
+
+
+
+/* =========================================================
+   OFFLINE / SERVICE WORKER
+   ========================================================= */
+
+const OFFLINE_CACHE_NAME =
+  "utility-geo-guess-assets-v1";
+
+
+async function registerOfflineServiceWorker(){
+
+  if(!("serviceWorker" in navigator)){
+    console.info("Service Worker not supported in this browser.");
+    return false;
+  }
+
+  try {
+    await navigator.serviceWorker.register("./sw.js", {scope:"./"});
+    await navigator.serviceWorker.ready;
+    return true;
+  }
+  catch(err){
+    console.warn("Service Worker registration failed.", err);
+    return false;
+  }
+}
+
+
+async function getOfflineAssetList(){
+
+  const assets = new Set([
+    "./",
+    "./index.html",
+    "./token.txt",
+    "./images/gps.csv",
+    "./landing/landing.png",
+    "./logo/logo.jpg",
+    "./screensaver/slides.csv"
+  ]);
+
+  try {
+    const gpsText = await fetch("./images/gps.csv", {cache:"no-store"}).then(r=>{
+      if(!r.ok) throw new Error("Could not load images/gps.csv");
+      return r.text();
+    });
+
+    parseGpsCsv(gpsText).forEach(item=>assets.add(`./images/${item.file}`));
+  }
+  catch(err){
+    console.warn("Could not build offline image list.", err);
+  }
+
+  try {
+    const response = await fetch("./screensaver/slides.csv", {cache:"no-store"});
+    if(response.ok){
+      const slideText = (await response.text()).replace(/\u0000/g,"").trim();
+      if(slideText){
+        slideText.split(/\r?\n/).slice(1).forEach(line=>{
+          const file = (line.split(",")[0] || "").trim();
+          if(file) assets.add(`./screensaver/${file}`);
+        });
+      }
     }
-  },1000);
+  }
+  catch(err){
+    console.info("Could not build offline screensaver list.", err);
+  }
+
+  return [...assets];
 }
 
-function onClick(e){
-  if(!active) return;
-  active=false;
-  clearInterval(timerId);
 
-  const r=rounds[round];
-  const d=distance(e.lngLat.lat,e.lngLat.lng,r.lat,r.lng);
-  total+=d;
+async function getOfflineCacheStatus(){
 
-  showMarkers(e.lngLat,r);
-  drawLine(e.lngLat,r);
+  if(!("caches" in window)){
+    return {supported:false,cached:0,total:0};
+  }
 
-  showRoundPopup(d);
+  const assets = await getOfflineAssetList();
+  const cache = await caches.open(OFFLINE_CACHE_NAME);
+  let cached = 0;
+
+  for(const asset of assets){
+    const response = await cache.match(asset,{ignoreSearch:true});
+    if(response) cached++;
+  }
+
+  return {supported:true,cached,total:assets.length};
 }
 
-function showRoundPopup(d){
-  roundPopup.style.display="block";
-  roundPopup.innerHTML=`
-    <div class="card">
-      <h3>Round result</h3>
-      <p>Distance: <b>${d?d.toFixed(1):"—"} km</b></p>
-      <p>Total: <b>${total.toFixed(1)} km</b></p>
-      <button onclick="next()">Next round</button>
-    </div>`;
-}
 
-function next(){
-  round++;
-  round<rounds.length ? nextRound() : showFinalForm();
-}
+async function prepareOfflineAssets(){
 
-function showFinalForm(){
-  const key=`leaderboard-${new Date().toISOString().slice(0,10)}`;
-  finalForm.style.display="flex";
-  finalForm.innerHTML=`
-    <div class="card">
-      <div class="logo-big"><img src="logo/logo.jpg"></div>
-      <h2>Your score</h2>
-      <h3>${total.toFixed(1)} km</h3>
+  const statusEl = document.getElementById("offlinePrepareStatus");
+  const cachedEl = document.getElementById("offlineCachedCount");
+  const totalEl = document.getElementById("offlineTotalCount");
+  const progressBar = document.getElementById("offlineProgressBar");
+  const button = document.getElementById("prepareOfflineButton");
 
-      <input id="name" placeholder="Name">
-      <input id="email" placeholder="Email">
-
-      <div class="consent">
-        <input type="checkbox" id="consent">
-        <label for="consent">I agree my details may be used to contact me</label>
-      </div>
-
-      <div id="formError" class="form-error">
-        Please complete all fields and accept the consent.
-      </div>
-
-      <button onclick="save('${key}')">Save score</button>
-    </div>`;
-}
-
-function save(key){
-  const error=document.getElementById("formError");
-  error.style.display="none";
-
-  const n=name.value.trim();
-  const e=email.value.trim();
-  const c=document.getElementById("consent").checked;
-
-  if(!n||!e||!c){
-    error.style.display="block";
+  if(!("caches" in window)){
+    if(statusEl) statusEl.innerText = "Offline cache is not supported by this browser.";
     return;
   }
 
-  const d=JSON.parse(localStorage.getItem(key)||"[]");
-  d.push({name:n,email:e,score:total,time:new Date().toISOString()});
-  d.sort((a,b)=>a.score-b.score);
-  localStorage.setItem(key,JSON.stringify(d));
+  if(button){
+    button.disabled = true;
+    button.innerText = "Preparing...";
+  }
 
-  finalForm.style.display="none";
-  showLeaderboard(key);
+  try {
+    const serviceWorkerReady = await registerOfflineServiceWorker();
+    if(!serviceWorkerReady){
+      throw new Error("Service Worker is unavailable. Open the game over HTTPS or localhost.");
+    }
+
+    const assets = await getOfflineAssetList();
+    const cache = await caches.open(OFFLINE_CACHE_NAME);
+    let cached = 0;
+
+    if(totalEl) totalEl.innerText = assets.length;
+
+    for(const asset of assets){
+      if(statusEl) statusEl.innerText = `Downloading ${asset}`;
+
+      try {
+        const response = await fetch(asset,{cache:"reload"});
+        if(!response.ok) throw new Error(`HTTP ${response.status}`);
+        await cache.put(asset,response.clone());
+        cached++;
+      }
+      catch(err){
+        console.warn("Offline asset failed:",asset,err);
+      }
+
+      if(cachedEl) cachedEl.innerText = cached;
+      if(progressBar){
+        progressBar.style.width = `${Math.round((cached/Math.max(1,assets.length))*100)}%`;
+      }
+    }
+
+    const complete = cached === assets.length;
+    if(statusEl){
+      statusEl.innerText = complete
+        ? "Offline assets ready."
+        : `${cached} of ${assets.length} assets cached. Some files could not be downloaded.`;
+    }
+
+    if(button){
+      button.innerText = complete ? "Offline assets ready" : "Retry offline download";
+    }
+  }
+  catch(err){
+    console.error("Offline preparation failed.",err);
+    if(statusEl) statusEl.innerText = err?.message || "Could not prepare offline assets.";
+    if(button) button.innerText = "Retry offline download";
+  }
+  finally {
+    if(button) button.disabled = false;
+  }
 }
 
-function showLeaderboard(key){
-  const d=JSON.parse(localStorage.getItem(key)||"[]");
-  const rows=d.slice(0,5)
-    .map(x=>`<li>${x.name} – ${x.score.toFixed(1)} km</li>`)
-    .join("") || "<li>No entries yet</li>";
 
-  leaderboardPopup.style.display="flex";
-  leaderboardPopup.innerHTML=`
-    <div class="card">
-      <div class="logo-big"><img src="logo/logo.jpg"></div>
-      <h2>Leaderboard</h2>
-      <ol>${rows}</ol>
-      <button onclick="location.reload()">Start again</button>
-      <button onclick="showRules()">Rules</button>
+async function refreshOfflineAdminStatus(){
+
+  const cachedEl = document.getElementById("offlineCachedCount");
+  const totalEl = document.getElementById("offlineTotalCount");
+  const statusEl = document.getElementById("offlinePrepareStatus");
+  const progressBar = document.getElementById("offlineProgressBar");
+
+  if(!cachedEl || !totalEl || !statusEl) return;
+
+  try {
+    const status = await getOfflineCacheStatus();
+    if(!status.supported){
+      statusEl.innerText = "Offline cache is not supported by this browser.";
+      return;
+    }
+
+    cachedEl.innerText = status.cached;
+    totalEl.innerText = status.total;
+    const percent = status.total ? Math.round((status.cached/status.total)*100) : 0;
+    if(progressBar) progressBar.style.width = `${percent}%`;
+
+    statusEl.innerText = status.cached === status.total && status.total > 0
+      ? "Offline assets ready."
+      : "This kiosk has not downloaded all offline assets yet.";
+  }
+  catch(err){
+    statusEl.innerText = "Could not read offline cache status.";
+  }
+}
+
+
+async function clearOfflineAssets(){
+  const confirmed = window.confirm("Remove downloaded offline game assets from this browser?");
+  if(!confirmed) return;
+
+  await caches.delete(OFFLINE_CACHE_NAME);
+  await refreshOfflineAdminStatus();
+
+  const button = document.getElementById("prepareOfflineButton");
+  if(button) button.innerText = "Prepare this kiosk for offline use";
+}
+
+/* =========================================================
+   STARTUP
+   ========================================================= */
+
+(async()=>{
+
+  try {
+
+    await registerOfflineServiceWorker();
+
+    const token = (
+      await fetch("token.txt")
+        .then(r=>{
+
+          if(!r.ok){
+            throw new Error(
+              "Could not load token.txt"
+            );
+          }
+
+          return r.text();
+
+        })
+    )
+    .replace(/\u0000/g,"")
+    .trim();
+
+
+    mapboxgl.accessToken = token;
+
+
+    const csv = await fetch(
+      "images/gps.csv"
+    )
+    .then(r=>{
+
+      if(!r.ok){
+        throw new Error(
+          "Could not load images/gps.csv"
+        );
+      }
+
+      return r.text();
+
+    });
+
+
+    allRounds = parseGpsCsv(csv);
+
+
+    if(allRounds.length === 0){
+
+      throw new Error(
+        "No valid image rows were found in gps.csv"
+      );
+
+    }
+
+
+    map = new mapboxgl.Map({
+
+      container:"map",
+
+      style:
+        "mapbox://styles/mapbox/dark-v11",
+
+      center:[
+        -98,
+        55
+      ],
+
+      zoom:3,
+
+      minZoom:2
+
+    });
+
+
+    map.on(
+      "click",
+      onMapClick
+    );
+
+
+    await loadAttractSlides();
+
+    await refreshGameConfig();
+    await syncPendingScores();
+
+    appReady = true;
+
+
+    scheduleIdle();
+
+  }
+
+  catch(err){
+
+    console.error(err);
+
+    document
+      .getElementById("loadingMessage")
+      .innerText =
+        "Startup error: " +
+        err.message;
+
+  }
+
+})();
+
+
+/* =========================================================
+   CSV
+   ========================================================= */
+
+function parseGpsCsv(text){
+
+  return text
+
+    .replace(/\u0000/g,"")
+
+    .trim()
+
+    .split(/\r?\n/)
+
+    .slice(1)
+
+    .map(line=>{
+
+      const [
+        file,
+        lat,
+        lng
+      ] =
+      line
+        .split(",")
+        .map(v=>v.trim());
+
+
+      return {
+
+        file,
+
+        lat:Number(lat),
+
+        lng:Number(lng)
+
+      };
+
+    })
+
+    .filter(r=>
+
+      r.file &&
+
+      Number.isFinite(r.lat) &&
+
+      Number.isFinite(r.lng)
+
+    );
+
+}
+
+
+/* =========================================================
+   RANDOM GAME
+   ========================================================= */
+
+function chooseRandomRounds(){
+
+  const shuffled = [
+    ...allRounds
+  ];
+
+
+  for(
+    let i =
+      shuffled.length - 1;
+
+    i > 0;
+
+    i--
+  ){
+
+    const j =
+      Math.floor(
+        Math.random() *
+        (i + 1)
+      );
+
+
+    [
+      shuffled[i],
+      shuffled[j]
+    ]
+    =
+    [
+      shuffled[j],
+      shuffled[i]
+    ];
+
+  }
+
+
+  return shuffled.slice(
+    0,
+    Math.min(
+      GAME_ROUNDS,
+      shuffled.length
+    )
+  );
+
+}
+
+
+/* =========================================================
+   IMAGE PRELOAD
+   ========================================================= */
+
+function preloadImage(src){
+
+  return new Promise(
+    resolve=>{
+
+      const p =
+        new Image();
+
+
+      p.onload =
+        ()=>resolve({
+          src,
+          ok:true
+        });
+
+
+      p.onerror =
+        ()=>resolve({
+          src,
+          ok:false
+        });
+
+
+      p.src = src;
+
+    }
+  );
+
+}
+
+
+async function preloadGameImages(){
+
+  const paths =
+    gameRounds.map(
+      r=>`images/${r.file}`
+    );
+
+
+  return Promise.all(
+    paths.map(
+      preloadImage
+    )
+  );
+
+}
+
+
+/* =========================================================
+   LANDING SCREEN
+   ========================================================= */
+
+function showLanding(){
+
+  document
+    .getElementById("landingScreen")
+    .classList
+    .remove("hidden");
+
+
+  document
+    .getElementById("roundTitle")
+    .innerText = "";
+
+
+  document
+    .getElementById("imageHint")
+    .style.visibility =
+      "hidden";
+
+
+  currentMode =
+    "rules";
+
+
+  scheduleIdle();
+
+}
+
+
+function hideLanding(){
+
+  document
+    .getElementById("landingScreen")
+    .classList
+    .add("hidden");
+
+}
+
+
+/* =========================================================
+   RESET
+   ========================================================= */
+
+function resetGame(){
+
+  clearInterval(
+    timerId
+  );
+
+  hideCountdown();
+
+
+  clearTimeout(
+    idleTimer
+  );
+
+
+  active = false;
+
+  round = 0;
+
+  total = 0;
+
+  roundResults = [];
+  lastPlayerPosition = null;
+
+  gameRounds = [];
+
+
+  removeVisuals();
+
+  resetImageView();
+
+
+  document
+    .getElementById("roundTitle")
+    .innerText = "";
+
+
+  document
+    .getElementById("surveyImage")
+    .removeAttribute("src");
+
+
+  document
+    .getElementById("imageHint")
+    .style.visibility =
+      "hidden";
+
+
+  document
+    .getElementById("roundPopup")
+    .style.display =
+      "none";
+
+
+  document
+    .getElementById("finalForm")
+    .style.display =
+      "none";
+
+
+  document
+    .getElementById("leaderboardPopup")
+    .style.display =
+      "none";
+
+
+  document
+    .getElementById("timer")
+    .style.display =
+      "none";
+
+
+  document
+    .getElementById("loadingMessage")
+    .innerText =
+      "";
+
+
+  showLanding();
+
+}
+
+
+/* =========================================================
+   START GAME
+   ========================================================= */
+
+async function startGame(){
+
+  prepareTimerAudio();
+
+  if(
+    !appReady ||
+    allRounds.length === 0
+  ){
+
+    document
+      .getElementById("loadingMessage")
+      .innerText =
+        "The game is still loading. Please try again in a moment.";
+
+    return;
+
+  }
+
+
+  clearTimeout(
+    idleTimer
+  );
+
+
+  const startButton =
+    document
+      .getElementById("startButton");
+
+
+  startButton.disabled =
+    true;
+
+
+  document
+    .getElementById("loadingMessage")
+    .innerText =
+      "Preparing your five images…";
+
+
+  round = 0;
+
+  total = 0;
+
+  roundResults = [];
+  lastPlayerPosition = null;
+
+
+  gameRounds =
+    chooseRandomRounds();
+
+
+  const results =
+    await preloadGameImages();
+
+
+  const failed =
+    results.filter(
+      r=>!r.ok
+    );
+
+
+  if(failed.length){
+
+    console.warn(
+      "Some game images did not preload:",
+      failed
+    );
+
+  }
+
+
+  startButton.disabled =
+    false;
+
+
+  document
+    .getElementById("loadingMessage")
+    .innerText =
+      "";
+
+
+  hideLanding();
+
+
+  currentMode =
+    "playing";
+
+
+  showRound();
+
+}
+
+
+/* =========================================================
+   ROUND
+   ========================================================= */
+
+function showRound(){
+
+  active = false;
+
+
+  clearInterval(
+    timerId
+  );
+
+  hideCountdown();
+
+
+  document
+    .getElementById("roundPopup")
+    .style.display =
+      "none";
+
+
+  document
+    .getElementById("finalForm")
+    .style.display =
+      "none";
+
+
+  document
+    .getElementById("leaderboardPopup")
+    .style.display =
+      "none";
+
+
+  removeVisuals();
+
+  resetImageView();
+
+
+  const current =
+    gameRounds[round];
+
+
+  if(!current){
+
+    showFinalForm();
+
+    return;
+
+  }
+
+
+  document
+    .getElementById("roundTitle")
+    .innerText =
+      `Round ${round + 1} / ${gameRounds.length}`;
+
+
+  document
+    .getElementById("imageHint")
+    .style.visibility =
+      "visible";
+
+
+  const img =
+    document
+      .getElementById("surveyImage");
+
+
+  img.alt =
+    "Aerial survey image";
+
+
+  const src =
+    `images/${current.file}`;
+
+
+  const timer =
+    document
+      .getElementById("timer");
+
+
+  timer.style.display =
+    "block";
+
+
+  timer.innerText =
+    "Loading image…";
+
+
+  const begin = ()=>{
+
+    img.onload = null;
+
+    active = true;
+
+    currentMode =
+      "playing";
+
+    startTimer();
+
+  };
+
+
+  if(
+    img.src.endsWith(
+      encodeURI(src)
+    ) &&
+
+    img.complete &&
+
+    img.naturalWidth > 0
+  ){
+
+    begin();
+
+  }
+
+  else {
+
+    img.onload =
+      begin;
+
+
+    img.onerror =
+      ()=>{
+
+        img.onload =
+          null;
+
+
+        active =
+          false;
+
+
+        timer.innerText =
+          "Image failed to load";
+
+
+        addRoundResult(
+          null,
+          "unavailable"
+        );
+
+        showRoundPopup(
+          null,
+          "Image unavailable"
+        );
+
+      };
+
+
+    img.src =
+      src;
+
+
+    if(
+      img.complete &&
+      img.naturalWidth > 0
+    ){
+
+      begin();
+
+    }
+
+  }
+
+}
+
+
+
+/* =========================================================
+   COUNTDOWN AUDIO / VISUALS
+   ========================================================= */
+
+let timerAudioContext = null;
+
+function prepareTimerAudio(){
+
+  try {
+
+    if(!timerAudioContext){
+
+      const AudioContextClass =
+        window.AudioContext ||
+        window.webkitAudioContext;
+
+      if(AudioContextClass){
+        timerAudioContext =
+          new AudioContextClass();
+      }
+
+    }
+
+    if(
+      timerAudioContext &&
+      timerAudioContext.state === "suspended"
+    ){
+      timerAudioContext.resume();
+    }
+
+  }
+  catch(err){
+    console.info("Countdown audio unavailable.", err);
+  }
+
+}
+
+
+const COUNTDOWN_SOUND = {
+  10:{ wave:"sine",   hz:300, volume:0.10, durationMs:800 },
+   9:{ wave:"sine",   hz:300, volume:0.10, durationMs:800 },
+   8:{ wave:"sine",   hz:300, volume:0.10, durationMs:800 },
+   7:{ wave:"sine",   hz:300, volume:0.10, durationMs:800 },
+   6:{ wave:"sine",   hz:300, volume:0.10, durationMs:800 },
+   5:{ wave:"sine",   hz:350, volume:0.10, durationMs:800 },
+   4:{ wave:"sine",   hz:400, volume:0.10, durationMs:800 },
+   3:{ wave:"sine",   hz:450, volume:0.10, durationMs:800 },
+   2:{ wave:"sine",   hz:500, volume:0.10, durationMs:800 },
+   1:{ wave:"sine",   hz:550, volume:0.10, durationMs:800 },
+
+  final:{
+    wave:"square",
+    hz:800,
+    volume:0.10,
+    durationMs:1000
+  }
+};
+
+
+function playCountdownSound(
+  seconds
+){
+
+  try {
+
+    prepareTimerAudio();
+
+    if(!timerAudioContext){
+      return;
+    }
+
+    const cfg =
+      seconds === "final"
+      ? COUNTDOWN_SOUND.final
+      : COUNTDOWN_SOUND[seconds];
+
+    if(!cfg){
+      return;
+    }
+
+    const now =
+      timerAudioContext.currentTime;
+
+    const oscillator =
+      timerAudioContext.createOscillator();
+
+    const gain =
+      timerAudioContext.createGain();
+
+    oscillator.type =
+      cfg.wave;
+
+    oscillator.frequency.setValueAtTime(
+      cfg.hz,
+      now
+    );
+
+    gain.gain.setValueAtTime(
+      0.0001,
+      now
+    );
+
+    gain.gain.exponentialRampToValueAtTime(
+      cfg.volume,
+      now + 0.01
+    );
+
+    gain.gain.exponentialRampToValueAtTime(
+      0.0001,
+      now + (cfg.durationMs / 1000)
+    );
+
+    oscillator.connect(
+      gain
+    );
+
+    gain.connect(
+      timerAudioContext.destination
+    );
+
+    oscillator.start(
+      now
+    );
+
+    oscillator.stop(
+      now + (cfg.durationMs / 1000) + 0.03
+    );
+
+  }
+  catch(err){
+    console.info("Countdown sound failed.", err);
+  }
+
+}
+
+
+function showCountdown(
+  seconds
+){
+
+  const overlay =
+    document.getElementById(
+      "countdownOverlay"
+    );
+
+  const number =
+    document.getElementById(
+      "countdownNumber"
+    );
+
+  if(
+    seconds > 10 ||
+    seconds <= 0
+  ){
+    hideCountdown();
+    return;
+  }
+
+  number.innerText =
+    seconds;
+
+  overlay
+    .classList
+    .add(
+      "visible"
+    );
+
+  overlay
+    .classList
+    .toggle(
+      "danger",
+      seconds <= 5
+    );
+
+  number
+    .classList
+    .remove(
+      "tick"
+    );
+
+  // Force reflow so the fade animation restarts every second.
+  void number.offsetWidth;
+
+  number
+    .classList
+    .add(
+      "tick"
+    );
+
+  playCountdownSound(
+    seconds
+  );
+
+}
+
+
+function hideCountdown(){
+
+  const overlay =
+    document.getElementById(
+      "countdownOverlay"
+    );
+
+  const number =
+    document.getElementById(
+      "countdownNumber"
+    );
+
+  if(overlay){
+    overlay
+      .classList
+      .remove(
+        "visible",
+        "danger"
+      );
+  }
+
+  if(number){
+    number
+      .classList
+      .remove(
+        "tick"
+      );
+  }
+
+}
+
+/* =========================================================
+   TIMER
+   ========================================================= */
+
+function startTimer(){
+
+  let t =
+    ROUND_TIME;
+
+  const timer =
+    document
+      .getElementById("timer");
+
+  hideCountdown();
+
+  prepareTimerAudio();
+
+  timer.style.display =
+    "block";
+
+  timer.innerText =
+    `Time: ${t}`;
+
+  clearInterval(
+    timerId
+  );
+
+  timerId =
+    setInterval(()=>{
+
+      t--;
+
+      timer.innerText =
+        `Time: ${t}`;
+
+      if(
+        t <= 10 &&
+        t > 0
+      ){
+
+        showCountdown(
+          t
+        );
+
+      }
+
+      if(t <= 0){
+
+        clearInterval(
+          timerId
+        );
+
+        hideCountdown();
+
+        playCountdownSound(
+          "final"
+        );
+
+        active =
+          false;
+
+        // A missed round gets the maximum possible distance,
+        // so timing out can never be better than making a guess.
+        total +=
+          TIMEOUT_PENALTY_KM;
+
+        addRoundResult(
+          TIMEOUT_PENALTY_KM,
+          "timeout"
+        );
+
+        showRoundPopup(
+          TIMEOUT_PENALTY_KM,
+          "Time's up"
+        );
+
+      }
+
+    },1000);
+
+}
+
+
+/* =========================================================
+   MAP CLICK
+   ========================================================= */
+
+function onMapClick(e){
+
+  if(!active){
+    return;
+  }
+
+
+  active =
+    false;
+
+
+  clearInterval(
+    timerId
+  );
+
+  hideCountdown();
+
+
+  const r =
+    gameRounds[round];
+
+
+  if(!r){
+    return;
+  }
+
+
+  const d =
+    distance(
+
+      e.lngLat.lat,
+
+      e.lngLat.lng,
+
+      r.lat,
+
+      r.lng
+
+    );
+
+
+  total += d;
+
+  addRoundResult(
+    d,
+    "guess"
+  );
+
+
+  showMarkers(
+    e.lngLat,
+    r
+  );
+
+
+  drawLine(
+    e.lngLat,
+    r
+  );
+
+
+  showRoundPopup(
+    d,
+    "Round result"
+  );
+
+}
+
+
+function getRoundComment(
+  distanceKm,
+  status = "guess"
+){
+
+  if(status === "timeout"){
+    return "TIME RAN OUT.";
+  }
+
+  if(status === "unavailable"){
+    return "IMAGE UNAVAILABLE.";
+  }
+
+  if(
+    distanceKm === null ||
+    !Number.isFinite(distanceKm)
+  ){
+    return "NO RESULT.";
+  }
+
+  const distanceMiles =
+    kmToMiles(distanceKm);
+
+  if(distanceMiles < 1){
+    return "NAILED IT.";
+  }
+
+  if(distanceMiles < 10){
+    return "NICE SHOT.";
+  }
+
+  if(distanceMiles < 50){
+    return "THAT WAS CLOSE.";
+  }
+
+  if(distanceMiles < 200){
+    return "SOLID GUESS.";
+  }
+
+  if(distanceMiles < 750){
+    return "WRONG NEIGHBOURHOOD.";
+  }
+
+  if(distanceMiles < 2000){
+    return "WRONG STATE... PROBABLY.";
+  }
+
+  if(distanceMiles < 5000){
+    return "YOU DEFINITELY WORK IN GIS.";
+  }
+
+  return "WRONG CONTINENT ENERGY.";
+
+}
+
+
+function addRoundResult(
+  distanceKm,
+  status = "guess"
+){
+
+  roundResults.push({
+    round:round + 1,
+    distance:
+      Number.isFinite(distanceKm)
+      ? distanceKm
+      : null,
+    status,
+    comment:
+      getRoundComment(
+        distanceKm,
+        status
+      )
+  });
+
+}
+
+
+function renderRoundHistory(){
+
+  if(!roundResults.length){
+    return "";
+  }
+
+  return `
+    <div class="round-history">
+      ${
+        roundResults.map((item,index)=>`
+          <div class="round-history-item">
+            <div class="round-history-round">
+              Round ${index + 1}
+            </div>
+            <div class="round-history-score">
+              ${
+                item.distance === null
+                ? "—"
+                : kmToMiles(item.distance).toFixed(1) + " mi"
+              }
+            </div>
+            <div
+              class="round-history-comment"
+              title="${escapeHtml(item.comment)}"
+            >
+              ${escapeHtml(item.comment)}
+            </div>
+          </div>
+        `).join("")
+      }
     </div>
-    <div class="export-link" onclick="exportCsv('${key}')">Export CSV</div>`;
+  `;
+
 }
+
+
+/* =========================================================
+   ROUND RESULT
+   ========================================================= */
+
+function showRoundPopup(
+  d,
+  title
+){
+
+  hideCountdown();
+
+  currentMode =
+    "roundResult";
+
+
+  scheduleIdle();
+
+
+  const popup =
+    document
+      .getElementById("roundPopup");
+
+
+  const isLast =
+    round ===
+    gameRounds.length - 1;
+
+
+  const status =
+    title === "Time's up"
+    ? "timeout"
+    : title === "Image unavailable"
+      ? "unavailable"
+      : "guess";
+
+
+  const feedback =
+    getRoundComment(
+      d,
+      status
+    );
+
+
+  popup.style.display =
+    "block";
+
+
+  popup.innerHTML = `
+
+    <div class="card">
+
+      <div class="round-feedback">
+        ${escapeHtml(feedback)}
+      </div>
+
+      <div class="round-distance">
+        ${
+          d === null
+          ? "—"
+          : kmToMiles(d).toFixed(1) + " mi"
+        }
+      </div>
+
+      <div class="round-total">
+        ${
+          status === "timeout"
+          ? "Timeout penalty"
+          : status === "unavailable"
+            ? "Round not scored"
+            : "Distance"
+        }
+        · Total ${kmToMiles(total).toFixed(1)} mi
+      </div>
+
+      <button
+        class="primary"
+        onclick="nextRound()"
+      >
+        ${
+          isLast
+          ? "Finish game"
+          : "Next round"
+        }
+      </button>
+
+    </div>
+
+  `;
+
+}
+
+
+/* =========================================================
+   NEXT ROUND
+   ========================================================= */
+
+function nextRound(){
+
+  clearTimeout(
+    idleTimer
+  );
+
+
+  document
+    .getElementById("roundPopup")
+    .style.display =
+      "none";
+
+
+  round++;
+
+
+  if(
+    round <
+    gameRounds.length
+  ){
+
+    showRound();
+
+  }
+
+  else {
+
+    showFinalForm();
+
+  }
+
+}
+
+
+/* =========================================================
+   FINAL SCORE
+   ========================================================= */
+
+function getScoreComment(scoreKm){
+
+  const score =
+    kmToMiles(scoreKm);
+
+  if(score < 25) return "SURVEYOR MATERIAL.";
+  if(score < 75) return "SHARP EYE.";
+  if(score < 200) return "NOT BAD AT ALL.";
+  if(score < 500) return "CLOSE ENOUGH...ISH.";
+  return "THE MAP WON THIS ONE.";
+
+}
+
+function showFinalForm(){
+
+  clearInterval(timerId);
+  hideCountdown();
+  clearTimeout(idleTimer);
+
+  active = false;
+  currentMode = "finalForm";
+
+  document.getElementById("timer").style.display = "none";
+  document.getElementById("roundPopup").style.display = "none";
+  document.getElementById("leaderboardPopup").style.display = "none";
+  document.getElementById("roundTitle").innerText = "";
+  document.getElementById("imageHint").style.visibility = "hidden";
+
+  const key = `leaderboard-${localDateKey()}`;
+  const finalForm = document.getElementById("finalForm");
+
+  finalForm.style.display = "flex";
+
+  finalForm.innerHTML = `
+    <div class="end-card">
+      <div class="end-kicker">Game complete</div>
+
+      <div class="final-score">
+        ${kmToMiles(total).toFixed(1)} <span>mi</span>
+      </div>
+
+      <div class="score-comment">
+        ${getScoreComment(total)}
+      </div>
+
+      <div class="score-subtitle">
+        Your total distance from all five survey locations. Lower is better.
+      </div>
+
+      ${renderRoundHistory()}
+
+      <div class="end-form">
+        <input
+          id="name"
+          type="text"
+          maxlength="60"
+          placeholder="Name"
+          autocomplete="name"
+        >
+
+        <input
+          id="email"
+          type="email"
+          maxlength="120"
+          placeholder="Email"
+          autocomplete="email"
+        >
+
+        <div class="consent">
+          <input type="checkbox" id="consent">
+          <label for="consent">
+            I agree my details may be used to contact me
+          </label>
+        </div>
+
+        <div id="formError" class="form-error">
+          Please complete all fields and accept the consent.
+        </div>
+
+        <div class="button-row">
+          <button
+            class="primary"
+            id="saveScoreButton"
+            onclick="saveScore('${key}')"
+          >
+            Save score
+          </button>
+
+          <button
+            class="secondary"
+            onclick="resetGame()"
+          >
+            Play again
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="export-link" onclick="openAdmin()">
+      Admin
+    </div>
+  `;
+
+  scheduleIdle();
+}
+
+
+
+async function getPlayerPosition(
+  entryId
+){
+
+  if(!entryId){
+    return null;
+  }
+
+  try {
+
+    const {
+      data,
+      error
+    } =
+      await db.rpc(
+        "get_player_position",
+        {
+          p_entry_id:entryId,
+          p_device_key:DEVICE_KEY
+        }
+      );
+
+
+    if(error){
+      throw error;
+    }
+
+
+    const row =
+      Array.isArray(data)
+      ? data[0]
+      : data;
+
+
+    return row || null;
+
+  }
+  catch(err){
+
+    console.warn(
+      "Could not load player position.",
+      err
+    );
+
+    return null;
+
+  }
+
+}
+
+
+function playTopFiveSound(){
+
+  try {
+
+    prepareTimerAudio();
+
+    if(!timerAudioContext){
+      return;
+    }
+
+    const now =
+      timerAudioContext.currentTime;
+
+    const notes = [
+      {hz:523.25, at:0.00},
+      {hz:659.25, at:0.12},
+      {hz:783.99, at:0.24},
+      {hz:1046.50,at:0.38}
+    ];
+
+    notes.forEach(note=>{
+
+      const osc =
+        timerAudioContext.createOscillator();
+
+      const gain =
+        timerAudioContext.createGain();
+
+      osc.type =
+        "triangle";
+
+      osc.frequency.setValueAtTime(
+        note.hz,
+        now + note.at
+      );
+
+      gain.gain.setValueAtTime(
+        0.0001,
+        now + note.at
+      );
+
+      gain.gain.exponentialRampToValueAtTime(
+        0.13,
+        now + note.at + 0.015
+      );
+
+      gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        now + note.at + 0.22
+      );
+
+      osc.connect(
+        gain
+      );
+
+      gain.connect(
+        timerAudioContext.destination
+      );
+
+      osc.start(
+        now + note.at
+      );
+
+      osc.stop(
+        now + note.at + 0.24
+      );
+
+    });
+
+  }
+  catch(err){
+    console.info("Top five sound unavailable.",err);
+  }
+
+}
+
+
+function getPrizeMessage(
+  position
+){
+
+  if(
+    !position ||
+    position.prize_mode === "off"
+  ){
+    return "";
+  }
+
+
+  if(position.in_prize_zone){
+    return "YOU'RE CURRENTLY IN THE PRIZE ZONE";
+  }
+
+
+  if(
+    position.prize_mode === "rank" &&
+    Number.isFinite(
+      Number(position.places_from_prize)
+    ) &&
+    Number(position.places_from_prize) > 0
+  ){
+
+    const places =
+      Number(
+        position.places_from_prize
+      );
+
+    return (
+      places === 1
+      ? "1 PLACE OFF THE PRIZE ZONE"
+      : `${places} PLACES OFF THE PRIZE ZONE`
+    );
+
+  }
+
+
+  if(
+    position.prize_mode === "score" &&
+    Number.isFinite(
+      Number(position.score_gap_km)
+    ) &&
+    Number(position.score_gap_km) > 0
+  ){
+
+    return (
+      `${kmToMiles(Number(position.score_gap_km)).toFixed(1)} MI OFF THE PRIZE ZONE`
+    );
+
+  }
+
+
+  return "";
+
+}
+
+/* =========================================================
+   SAVE SCORE
+   ========================================================= */
+
+async function refreshGameConfig(){
+  try {
+    const { data, error } = await db.rpc(
+      "get_game_config",
+      { p_device_key: DEVICE_KEY }
+    );
+
+    if(error) throw error;
+
+    const row = Array.isArray(data) ? data[0] : data;
+    if(row) gameConfig = row;
+  }
+  catch(err){
+    console.warn("Could not load game configuration", err);
+    gameConfig = {
+      is_kiosk:false,
+      kiosk_name:null,
+      event_id:null,
+      event_name:"Global",
+      leaderboard_scope:"global"
+    };
+  }
+}
+
+function getPendingScores(){
+  try {
+    return JSON.parse(localStorage.getItem(PENDING_SCORES_STORAGE) || "[]");
+  }
+  catch {
+    return [];
+  }
+}
+
+function setPendingScores(items){
+  localStorage.setItem(PENDING_SCORES_STORAGE, JSON.stringify(items));
+}
+
+async function syncPendingScores(){
+  const pending = getPendingScores();
+  if(!pending.length) return;
+
+  const remaining = [];
+
+  for(const item of pending){
+    const { error } = await db.rpc("submit_game_score", item);
+    if(error) remaining.push(item);
+  }
+
+  setPendingScores(remaining);
+}
+
+async function saveScore(key){
+
+  const error = document.getElementById("formError");
+  const nameInput = document.getElementById("name");
+  const emailInput = document.getElementById("email");
+  const consentBox = document.getElementById("consent");
+  const saveButton = document.getElementById("saveScoreButton");
+
+  error.style.display = "none";
+  error.innerText = "Please complete all fields and accept the consent.";
+
+  const n = nameInput.value.trim();
+  const e = emailInput.value.trim();
+  const c = consentBox.checked;
+
+  if(!n || !e || !c){
+    error.style.display = "block";
+    return;
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  if(!emailRegex.test(e)){
+    error.innerText = "Please enter a valid email address.";
+    error.style.display = "block";
+    return;
+  }
+
+  saveButton.disabled = true;
+  saveButton.innerText = "Saving...";
+
+  const payload = {
+    p_device_key: DEVICE_KEY,
+    p_name: n,
+    p_email: e,
+    p_score_km: Number(total.toFixed(3)),
+    p_consent: true
+  };
+
+  try {
+    const { data:entryId, error:saveError } = await db.rpc(
+      "submit_game_score",
+      payload
+    );
+
+    if(saveError) throw saveError;
+
+    document.getElementById("finalForm").style.display = "none";
+
+    await refreshGameConfig();
+
+    lastPlayerPosition =
+      await getPlayerPosition(
+        entryId || null
+      );
+
+    await showLeaderboard(
+      null,
+      entryId || null,
+      lastPlayerPosition
+    );
+  }
+  catch(err){
+    console.error("Central score save failed", err);
+
+    const pending = getPendingScores();
+    pending.push(payload);
+    setPendingScores(pending);
+
+    error.innerText = "No connection to the central database. Your score is queued on this device and will be retried automatically.";
+    error.style.display = "block";
+
+    saveButton.disabled = false;
+    saveButton.innerText = "Retry save";
+  }
+}
+
+
+/* =========================================================
+   LEADERBOARD
+   ========================================================= */
+
+async function showLeaderboard(
+  key = null,
+  currentEntryId = null,
+  playerPosition = null
+){
+
+  clearInterval(timerId);
+
+  document.getElementById("timer").style.display = "none";
+  document.getElementById("finalForm").style.display = "none";
+
+  currentMode = "leaderboard";
+
+  await refreshGameConfig();
+
+  let data = [];
+  let loadError = null;
+
+  try {
+    const response = await db.rpc(
+      "get_leaderboard_for_device",
+      {
+        p_device_key: DEVICE_KEY,
+        p_limit: 5
+      }
+    );
+
+    if(response.error) throw response.error;
+    data = response.data || [];
+  }
+  catch(err){
+    console.error("Leaderboard load failed", err);
+    loadError = err;
+  }
+
+
+  if(
+    currentEntryId &&
+    !playerPosition
+  ){
+    playerPosition =
+      await getPlayerPosition(
+        currentEntryId
+      );
+  }
+
+
+  if(playerPosition){
+    lastPlayerPosition =
+      playerPosition;
+  }
+
+
+  const rows = loadError
+    ? `<div class="leaderboard-empty">Leaderboard temporarily unavailable.</div>`
+    : data.length
+      ? data.map(x=>`
+          <div class="leaderboard-row ${x.entry_id && x.entry_id === currentEntryId ? "current" : ""}">
+            <div class="leaderboard-rank">${x.rank}</div>
+            <div class="leaderboard-name">${escapeHtml(x.name)}</div>
+            <div class="leaderboard-score">${kmToMiles(Number(x.score_km)).toFixed(1)} mi</div>
+          </div>
+        `).join("")
+      : `<div class="leaderboard-empty">No scores yet. Be the first.</div>`;
+
+
+  const scopeLabel = !gameConfig.is_kiosk
+    ? "Global"
+    : gameConfig.leaderboard_scope === "daily"
+      ? "Today"
+      : gameConfig.leaderboard_scope === "event"
+        ? (gameConfig.event_name || "Current event")
+        : gameConfig.leaderboard_scope === "hidden"
+          ? "Hidden"
+          : "Global";
+
+
+  const hasRank =
+    playerPosition &&
+    playerPosition.rank !== null &&
+    playerPosition.players !== null;
+
+
+  const isTopFive =
+    Boolean(
+      hasRank &&
+      playerPosition.top_five
+    );
+
+
+  const positionHtml =
+    hasRank
+    ? `
+        <div class="player-position">
+          <span>#${playerPosition.rank}</span>
+          OF ${playerPosition.players}
+          ${escapeHtml(String(playerPosition.scope_label || scopeLabel).toUpperCase())}
+        </div>
+      `
+    : "";
+
+
+  const celebrationHtml =
+    isTopFive
+    ? `
+        <div class="rank-celebration">
+          NEW #${playerPosition.rank}!
+        </div>
+        <div class="rank-celebration-sub">
+          You're on the leaderboard
+        </div>
+      `
+    : "";
+
+
+  const prizeMessage =
+    getPrizeMessage(
+      playerPosition
+    );
+
+
+  const prizeHtml =
+    prizeMessage
+    ? `
+        <div class="prize-message">
+          ${escapeHtml(prizeMessage)}
+        </div>
+      `
+    : "";
+
+
+  const popup = document.getElementById("leaderboardPopup");
+
+  popup.style.display = "flex";
+
+  popup.innerHTML = `
+    <div class="end-card ${isTopFive ? "celebrate" : ""}">
+
+      ${
+        celebrationHtml ||
+        `
+          <div class="end-kicker">
+            ${escapeHtml(scopeLabel)} challenge
+          </div>
+          <h2>Leaderboard</h2>
+        `
+      }
+
+      ${positionHtml}
+      ${prizeHtml}
+
+      <div class="leaderboard-list">
+        ${rows}
+      </div>
+
+      <div class="button-row">
+        <button class="primary" onclick="resetGame()">
+          Play again
+        </button>
+
+        <button class="secondary" onclick="showRules()">
+          How to play
+        </button>
+      </div>
+    </div>
+
+    <div class="export-link" onclick="openAdmin()">
+      Admin
+    </div>
+  `;
+
+
+  if(isTopFive){
+    playTopFiveSound();
+  }
+
+
+  scheduleIdle();
+}
+
+
+/* =========================================================
+   RULES
+   ========================================================= */
 
 function showRules(){
-  leaderboardPopup.style.display="none";
-  rulesPopup.style.display="flex";
+
+  document.getElementById("leaderboardPopup").style.display = "none";
+  document.getElementById("finalForm").style.display = "none";
+  showLanding();
+
 }
+
+
+/* =========================================================
+   OPEN SCOREBOARD
+   ========================================================= */
+
+async function openScoreboard(){
+  hideLanding();
+  await showLeaderboard();
+}
+
+
+/* =========================================================
+   CSV EXPORT
+   ========================================================= */
 
 function exportCsv(key){
-  const d=JSON.parse(localStorage.getItem(key)||"[]");
-  if(!d.length) return;
-  const csv=["Name,Email,Distance_km,Timestamp",
-    ...d.map(x=>`${x.name},${x.email},${x.score.toFixed(1)},${x.time}`)].join("\n");
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(new Blob([csv]));
-  a.download=`${key}.csv`;
+
+  const data =
+    JSON.parse(
+      localStorage.getItem(key)
+      ||
+      "[]"
+    );
+
+
+  if(
+    !data.length
+  ){
+    return;
+  }
+
+
+  const rows =
+    data.map(
+      x=>[
+
+        csvCell(
+          x.name
+        ),
+
+        csvCell(
+          x.email
+        ),
+
+        kmToMiles(
+          Number(
+            x.score
+          )
+        )
+        .toFixed(1),
+
+        csvCell(
+          x.time
+        ),
+
+        x.consent === true
+          ? "Yes"
+          : "No"
+
+      ].join(",")
+    );
+
+
+  const csv = [
+
+    "Name,Email,Distance_miles,Timestamp,Consent",
+
+    ...rows
+
+  ].join("\n");
+
+
+  const url =
+    URL.createObjectURL(
+
+      new Blob(
+        [csv],
+        {
+          type:
+            "text/csv;charset=utf-8"
+        }
+      )
+
+    );
+
+
+  const a =
+    document
+      .createElement("a");
+
+
+  a.href =
+    url;
+
+
+  a.download =
+    `${key}.csv`;
+
+
   a.click();
+
+
+  setTimeout(
+    ()=>
+      URL.revokeObjectURL(url),
+    1000
+  );
+
 }
 
-function showMarkers(guess,r){
-  removeVisuals();
-  guessMarker=new mapboxgl.Marker({color:"#f97316"})
-    .setLngLat(guess).addTo(map);
-  trueMarker=new mapboxgl.Marker({color:"#22c55e"})
-    .setLngLat([r.lng,r.lat]).addTo(map);
+
+/* =========================================================
+   ADMIN
+   ========================================================= */
+
+async function openAdmin(){
+  clearTimeout(idleTimer);
+
+  document.getElementById("leaderboardPopup").style.display = "none";
+  document.getElementById("landingScreen").classList.add("hidden");
+
+  const screen = document.getElementById("adminScreen");
+  screen.style.display = "flex";
+
+  const { data:{ session } } = await db.auth.getSession();
+
+  if(session){
+    const { data:isAdmin, error } = await db.rpc("is_admin");
+
+    if(!error && isAdmin){
+      const adminRecord = await getCurrentAdminRecord();
+
+      if(adminRecord?.must_change_password){
+        renderPasswordChange();
+        return;
+      }
+
+      await renderAdminDashboard();
+      return;
+    }
+
+    await db.auth.signOut();
+  }
+
+  renderAdminLogin();
 }
 
-function drawLine(guess,r){
-  map.addSource("line",{
-    type:"geojson",
-    data:{type:"Feature",geometry:{type:"LineString",coordinates:[[guess.lng,guess.lat],[r.lng,r.lat]]}}
+function renderAdminLogin(message = ""){
+  const screen = document.getElementById("adminScreen");
+
+  screen.innerHTML = `
+    <div class="admin-shell admin-login">
+      <div class="admin-header">
+        <div>
+          <div class="end-kicker">Utility Geo Guess</div>
+          <h2>Admin login</h2>
+        </div>
+      </div>
+
+      <input id="adminEmail" type="email" placeholder="Email" autocomplete="username">
+      <input id="adminPassword" type="password" placeholder="Password" autocomplete="current-password">
+
+      <div class="admin-status" id="adminLoginStatus">${escapeHtml(message)}</div>
+
+      <div class="button-row">
+        <button class="primary" onclick="adminLogin()">Log in</button>
+        <button class="secondary" onclick="closeAdmin()">Cancel</button>
+      </div>
+    </div>
+  `;
+}
+
+async function adminLogin(){
+  const email = document.getElementById("adminEmail").value.trim();
+  const password = document.getElementById("adminPassword").value;
+  const status = document.getElementById("adminLoginStatus");
+
+  status.innerText = "Signing in...";
+
+  const { error } = await db.auth.signInWithPassword({ email, password });
+
+  if(error){
+    status.innerText = "Login failed.";
+    return;
+  }
+
+  const { data:isAdmin, error:adminError } = await db.rpc("is_admin");
+
+  if(adminError || !isAdmin){
+    await db.auth.signOut();
+    status.innerText = "This account does not have admin access.";
+    return;
+  }
+
+  const adminRecord = await getCurrentAdminRecord();
+
+  if(!adminRecord){
+    await db.auth.signOut();
+    renderAdminLogin("Could not verify your administrator profile.");
+    return;
+  }
+
+  if(adminRecord.must_change_password){
+    renderPasswordChange();
+    return;
+  }
+
+  await renderAdminDashboard();
+}
+
+
+async function getCurrentAdminRecord(){
+  try {
+    const { data:{ user } } = await db.auth.getUser();
+
+    if(!user){
+      return null;
+    }
+
+    const { data, error } = await db
+      .from("admins")
+      .select("user_id,must_change_password")
+      .eq("user_id",user.id)
+      .single();
+
+    if(error){
+      console.error("Could not load admin profile.",error);
+      return null;
+    }
+
+    return data;
+  }
+  catch(err){
+    console.error("Could not load admin profile.",err);
+    return null;
+  }
+}
+
+
+function renderPasswordChange(message = ""){
+  const screen = document.getElementById("adminScreen");
+
+  screen.innerHTML = `
+    <div class="admin-shell admin-login">
+      <div class="admin-header">
+        <div>
+          <div class="end-kicker">Utility Geo Guess</div>
+          <h2>Set a new password</h2>
+        </div>
+      </div>
+
+      <div class="admin-muted" style="margin-bottom:14px;line-height:1.5;">
+        You are using a temporary password. Choose a new password before continuing to Admin.
+      </div>
+
+      <input id="adminNewPassword" type="password" placeholder="New password" autocomplete="new-password" minlength="8">
+      <input id="adminConfirmPassword" type="password" placeholder="Confirm new password" autocomplete="new-password" minlength="8">
+
+      <div class="admin-status" id="adminPasswordStatus">${escapeHtml(message)}</div>
+
+      <div class="button-row">
+        <button class="primary" id="changePasswordButton" onclick="changeAdminPassword()">Change password</button>
+        <button class="secondary" onclick="cancelPasswordChange()">Cancel</button>
+      </div>
+    </div>
+  `;
+}
+
+
+async function changeAdminPassword(){
+  const password = document.getElementById("adminNewPassword").value;
+  const confirmPassword = document.getElementById("adminConfirmPassword").value;
+  const status = document.getElementById("adminPasswordStatus");
+  const button = document.getElementById("changePasswordButton");
+
+  status.innerText = "";
+
+  if(password.length < 8){
+    status.innerText = "Password must be at least 8 characters.";
+    return;
+  }
+
+  if(password !== confirmPassword){
+    status.innerText = "The passwords do not match.";
+    return;
+  }
+
+  button.disabled = true;
+  button.innerText = "Updating...";
+
+  try {
+    const { data:{ user } } = await db.auth.getUser();
+
+    if(!user){
+      throw new Error("Your session has expired. Please log in again.");
+    }
+
+    const { error:passwordError } = await db.auth.updateUser({ password });
+
+    if(passwordError){
+      throw passwordError;
+    }
+
+    const { error:flagError } = await db
+      .from("admins")
+      .update({ must_change_password:false })
+      .eq("user_id",user.id);
+
+    if(flagError){
+      console.error("Password changed but first-login flag could not be cleared.",flagError);
+      status.innerText = "Your password was changed, but your profile could not be updated. Please contact an administrator.";
+      button.disabled = false;
+      button.innerText = "Try again";
+      return;
+    }
+
+    await renderAdminDashboard("Password changed successfully.");
+  }
+  catch(err){
+    console.error("Password change failed.",err);
+    status.innerText = err?.message || "Could not change password.";
+    button.disabled = false;
+    button.innerText = "Change password";
+  }
+}
+
+
+async function cancelPasswordChange(){
+  await db.auth.signOut();
+  renderAdminLogin("Password change cancelled.");
+}
+
+async function loadAdminData(){
+  const [eventsRes,repsRes,kiosksRes,settingsRes] = await Promise.all([
+    db.from("events").select("*").order("start_date",{ascending:false}),
+    db.from("sales_reps").select("*").order("name"),
+    db.from("kiosks").select("*, sales_reps(name)").order("name"),
+    db.from("game_settings").select("*").eq("id",true).single()
+  ]);
+
+  const firstError = [eventsRes,repsRes,kiosksRes,settingsRes].find(x=>x.error)?.error;
+  if(firstError) throw firstError;
+
+  adminState.events = eventsRes.data || [];
+  adminState.reps = repsRes.data || [];
+  adminState.kiosks = kiosksRes.data || [];
+  adminState.settings = settingsRes.data;
+}
+
+function eventOptions(selectedId){
+  const rows = [
+    `<option value="" ${!selectedId ? "selected" : ""}>Global / No event</option>`
+  ];
+
+  for(const event of adminState.events.filter(x=>!x.archived)){
+    rows.push(`<option value="${event.id}" ${event.id===selectedId ? "selected" : ""}>${escapeHtml(event.name)}</option>`);
+  }
+
+  return rows.join("");
+}
+
+function repOptions(selectedId){
+  const rows = [`<option value="">Unassigned</option>`];
+
+  for(const rep of adminState.reps.filter(x=>x.active)){
+    rows.push(`<option value="${rep.id}" ${rep.id===selectedId ? "selected" : ""}>${escapeHtml(rep.name)}</option>`);
+  }
+
+  return rows.join("");
+}
+
+async function renderAdminDashboard(message = ""){
+  const screen = document.getElementById("adminScreen");
+
+  try {
+    await loadAdminData();
+  }
+  catch(err){
+    console.error(err);
+    renderAdminLogin("Could not load admin data.");
+    return;
+  }
+
+  const currentKiosk = adminState.kiosks.find(k=>k.device_key===DEVICE_KEY);
+  const settings = adminState.settings;
+
+  const kioskRows = adminState.kiosks.length
+    ? adminState.kiosks.map(k=>`
+        <div class="admin-list-row">
+          <div><b>${escapeHtml(k.name)}</b><div class="admin-muted">${escapeHtml(k.device_key)}</div></div>
+          <div>${escapeHtml(k.sales_reps?.name || "Unassigned")}</div>
+          <div>${escapeHtml(k.last_ip || "No IP")}</div>
+          <button class="secondary" onclick="loadKioskForEdit('${k.id}')">Edit</button>
+        </div>
+      `).join("")
+    : `<div class="admin-muted">No registered kiosks yet.</div>`;
+
+  screen.innerHTML = `
+    <div class="admin-shell">
+      <div class="admin-header">
+        <div>
+          <div class="end-kicker">Utility Geo Guess</div>
+          <h2>Admin</h2>
+        </div>
+        <button class="secondary" onclick="logoutAndCloseAdmin()">Log out</button>
+      </div>
+
+      <div class="admin-grid">
+
+        <div class="admin-section">
+          <h3>Game setup</h3>
+
+          <div class="admin-field">
+            <label>Current event</label>
+            <select id="adminCurrentEvent">
+              ${eventOptions(settings.current_event_id)}
+            </select>
+          </div>
+
+          <div class="admin-field">
+            <label>Leaderboard scope</label>
+            <select id="adminLeaderboardScope">
+              <option value="daily" ${settings.leaderboard_scope==="daily"?"selected":""}>Today</option>
+              <option value="event" ${settings.leaderboard_scope==="event"?"selected":""}>Current event</option>
+              <option value="global" ${settings.leaderboard_scope==="global"?"selected":""}>Global</option>
+              <option value="hidden" ${settings.leaderboard_scope==="hidden"?"selected":""}>Hidden</option>
+            </select>
+          </div>
+
+          <div class="admin-field">
+            <label>Prize mode</label>
+            <select id="adminPrizeMode" onchange="updatePrizeAdminFields()">
+              <option value="off" ${settings.prize_mode==="off"?"selected":""}>Off</option>
+              <option value="rank" ${settings.prize_mode==="rank"?"selected":""}>Top N players</option>
+              <option value="score" ${settings.prize_mode==="score"?"selected":""}>Score under threshold</option>
+            </select>
+          </div>
+
+          <div class="admin-field" id="adminPrizeRankField">
+            <label>Prize places</label>
+            <input
+              id="adminPrizeRank"
+              type="number"
+              min="1"
+              step="1"
+              value="${Number(settings.prize_rank || 5)}"
+            >
+          </div>
+
+          <div class="admin-field" id="adminPrizeScoreField">
+            <label>Prize score threshold (miles)</label>
+            <input
+              id="adminPrizeScore"
+              type="number"
+              min="0"
+              step="0.1"
+              value="${settings.prize_score_km === null || settings.prize_score_km === undefined ? "" : kmToMiles(settings.prize_score_km).toFixed(1)}"
+              placeholder="e.g. 100"
+            >
+          </div>
+
+          <div class="admin-actions">
+            <button class="primary" onclick="saveGameSettings()">Save settings</button>
+          </div>
+        </div>
+
+        <div class="admin-section">
+          <h3>Add event</h3>
+
+          <div class="admin-field"><label>Name</label><input id="newEventName" placeholder="Trees & Utilities 2026"></div>
+          <div class="admin-field"><label>Location</label><input id="newEventLocation" placeholder="Indianapolis, IN"></div>
+          <div class="admin-inline">
+            <div class="admin-field"><label>Start</label><input id="newEventStart" type="date"></div>
+            <div class="admin-field"><label>End</label><input id="newEventEnd" type="date"></div>
+            <div class="admin-field"><label>Timezone</label><input id="newEventTimezone" value="America/New_York"></div>
+          </div>
+          <div class="admin-actions"><button class="primary" onclick="addEvent()">Add event</button></div>
+        </div>
+
+        <div class="admin-section">
+          <h3>Sales reps</h3>
+          <div class="admin-inline">
+            <div class="admin-field"><label>Name</label><input id="newRepName" placeholder="Name"></div>
+            <div class="admin-field"><label>Email</label><input id="newRepEmail" type="email" placeholder="Email (optional)"></div>
+            <button class="primary" onclick="addSalesRep()">Add</button>
+          </div>
+        </div>
+
+        <div class="admin-section">
+          <h3>This device</h3>
+          <div class="admin-field">
+            <label>Device ID</label>
+            <div class="admin-device-id">${escapeHtml(DEVICE_KEY)}</div>
+          </div>
+          <div class="admin-field"><label>Kiosk name</label><input id="currentKioskName" value="${escapeHtml(currentKiosk?.name || "")}" placeholder="Booth Kiosk 01"></div>
+          <div class="admin-field"><label>Sales rep</label><select id="currentKioskRep">${repOptions(currentKiosk?.sales_rep_id || null)}</select></div>
+          <div class="admin-field"><label>IP address (optional/manual)</label><input id="currentKioskIp" value="${escapeHtml(currentKiosk?.last_ip || "")}" placeholder="e.g. 192.0.2.10"></div>
+          <div class="admin-actions"><button class="primary" onclick="saveCurrentDevice()">${currentKiosk ? "Update device" : "Register as kiosk"}</button></div>
+        </div>
+
+        <div class="admin-section full">
+          <h3>Registered kiosks</h3>
+          <div class="admin-list">${kioskRows}</div>
+        </div>
+
+        <div class="admin-section full" id="kioskEditSection" style="display:none;"></div>
+
+        <div class="admin-section full">
+          <h3>Offline readiness</h3>
+
+          <div class="admin-muted">
+            Download the game images and local presentation assets to this browser before the event.
+            Mapbox and the central database still require an internet connection.
+          </div>
+
+          <div class="offline-status-box">
+            <div class="offline-status-line">
+              <span>Cached assets</span>
+              <strong><span id="offlineCachedCount">0</span> / <span id="offlineTotalCount">0</span></strong>
+            </div>
+
+            <div class="offline-progress">
+              <div class="offline-progress-bar" id="offlineProgressBar"></div>
+            </div>
+
+            <div class="offline-note" id="offlinePrepareStatus">
+              Checking offline cache...
+            </div>
+          </div>
+
+          <div class="admin-actions">
+            <button class="primary" id="prepareOfflineButton" onclick="prepareOfflineAssets()">
+              Prepare this kiosk for offline use
+            </button>
+            <button class="secondary" onclick="refreshOfflineAdminStatus()">Check status</button>
+            <button class="secondary" onclick="clearOfflineAssets()">Clear offline cache</button>
+          </div>
+
+          <div class="offline-note">
+            Run this once on each kiosk while you have a reliable connection.
+            If the network later drops, local images, landing graphics and screensaver slides can load from the browser cache.
+            Scores already use the game's pending-score queue when Supabase is unavailable.
+          </div>
+        </div>
+
+        <div class="admin-section full">
+          <h3>Export</h3>
+          <div class="admin-actions">
+            <button class="secondary" onclick="downloadAdminCsv('today')">Download today</button>
+            <button class="secondary" onclick="downloadAdminCsv('event')">Download current event</button>
+            <button class="secondary" onclick="downloadAdminCsv('all')">Download all</button>
+          </div>
+          <div class="admin-muted" style="margin-top:10px;">Exports include contact details and are available only while logged in as an admin.</div>
+        </div>
+      </div>
+
+      <div class="admin-status" id="adminStatus">${escapeHtml(message)}</div>
+      <div class="admin-actions">
+        <button class="secondary" onclick="logoutAndCloseAdmin()">Close admin</button>
+      </div>
+    </div>
+  `;
+
+  updatePrizeAdminFields();
+  refreshOfflineAdminStatus();
+}
+
+
+function updatePrizeAdminFields(){
+
+  const modeEl =
+    document.getElementById(
+      "adminPrizeMode"
+    );
+
+  const rankField =
+    document.getElementById(
+      "adminPrizeRankField"
+    );
+
+  const scoreField =
+    document.getElementById(
+      "adminPrizeScoreField"
+    );
+
+  if(
+    !modeEl ||
+    !rankField ||
+    !scoreField
+  ){
+    return;
+  }
+
+  rankField.style.display =
+    modeEl.value === "rank"
+    ? "block"
+    : "none";
+
+  scoreField.style.display =
+    modeEl.value === "score"
+    ? "block"
+    : "none";
+
+}
+
+
+function adminStatus(message){
+  const el = document.getElementById("adminStatus");
+  if(el) el.innerText = message;
+}
+
+async function saveGameSettings(){
+  const eventId = document.getElementById("adminCurrentEvent").value || null;
+  const scope = document.getElementById("adminLeaderboardScope").value;
+
+  const prizeMode =
+    document.getElementById("adminPrizeMode").value;
+
+  const prizeRank =
+    Math.max(
+      1,
+      Number(
+        document.getElementById("adminPrizeRank").value
+        || 5
+      )
+    );
+
+  const prizeScoreRaw =
+    document.getElementById("adminPrizeScore").value;
+
+  const prizeScore =
+    prizeScoreRaw === ""
+    ? null
+    : milesToKm(
+        Math.max(
+          0,
+          Number(prizeScoreRaw)
+        )
+      );
+
+  const { error } = await db
+    .from("game_settings")
+    .update({
+      current_event_id:eventId,
+      leaderboard_scope:scope,
+      prize_mode:prizeMode,
+      prize_rank:prizeRank,
+      prize_score_km:prizeScore,
+      updated_at:new Date().toISOString()
+    })
+    .eq("id",true);
+
+  if(error){
+    adminStatus("Could not save settings: " + error.message);
+    return;
+  }
+
+  await refreshGameConfig();
+  await renderAdminDashboard("Settings saved.");
+}
+
+async function addEvent(){
+  const name = document.getElementById("newEventName").value.trim();
+  const location = document.getElementById("newEventLocation").value.trim();
+  const start = document.getElementById("newEventStart").value || null;
+  const end = document.getElementById("newEventEnd").value || null;
+  const timezone = document.getElementById("newEventTimezone").value.trim() || "UTC";
+
+  if(!name){
+    adminStatus("Event name is required.");
+    return;
+  }
+
+  const { error } = await db.from("events").insert({
+    name,
+    location:location || null,
+    start_date:start,
+    end_date:end,
+    timezone
   });
-  map.addLayer({id:"line",type:"line",source:"line",paint:{ "line-color":"#38bdf8","line-width":3 }});
+
+  if(error){
+    adminStatus("Could not add event: " + error.message);
+    return;
+  }
+
+  await renderAdminDashboard("Event added. Select it under Game setup when you are ready to activate it.");
 }
+
+async function addSalesRep(){
+  const name = document.getElementById("newRepName").value.trim();
+  const email = document.getElementById("newRepEmail").value.trim();
+
+  if(!name){
+    adminStatus("Sales rep name is required.");
+    return;
+  }
+
+  const { error } = await db.from("sales_reps").insert({ name, email:email || null });
+
+  if(error){
+    adminStatus("Could not add sales rep: " + error.message);
+    return;
+  }
+
+  await renderAdminDashboard("Sales rep added.");
+}
+
+async function saveCurrentDevice(){
+  const name = document.getElementById("currentKioskName").value.trim();
+  const salesRepId = document.getElementById("currentKioskRep").value || null;
+  const ip = document.getElementById("currentKioskIp").value.trim() || null;
+
+  if(!name){
+    adminStatus("Kiosk name is required.");
+    return;
+  }
+
+  const existing = adminState.kiosks.find(k=>k.device_key===DEVICE_KEY);
+  let response;
+
+  if(existing){
+    response = await db.from("kiosks").update({
+      name,
+      sales_rep_id:salesRepId,
+      last_ip:ip,
+      active:true
+    }).eq("id",existing.id);
+  }
+  else {
+    response = await db.from("kiosks").insert({
+      device_key:DEVICE_KEY,
+      name,
+      sales_rep_id:salesRepId,
+      last_ip:ip,
+      active:true,
+      last_seen:new Date().toISOString()
+    });
+  }
+
+  if(response.error){
+    adminStatus("Could not save kiosk: " + response.error.message);
+    return;
+  }
+
+  await refreshGameConfig();
+  await renderAdminDashboard("Device saved as kiosk.");
+}
+
+function loadKioskForEdit(id){
+  const kiosk = adminState.kiosks.find(k=>k.id===id);
+  if(!kiosk) return;
+
+  const section = document.getElementById("kioskEditSection");
+  section.style.display = "block";
+  section.innerHTML = `
+    <h3>Edit kiosk</h3>
+    <div class="admin-device-id">${escapeHtml(kiosk.device_key)}</div>
+    <div class="admin-field"><label>Name</label><input id="editKioskName" value="${escapeHtml(kiosk.name)}"></div>
+    <div class="admin-field"><label>Sales rep</label><select id="editKioskRep">${repOptions(kiosk.sales_rep_id)}</select></div>
+    <div class="admin-field"><label>IP address</label><input id="editKioskIp" value="${escapeHtml(kiosk.last_ip || "")}"></div>
+    <div class="admin-field"><label>Status</label><select id="editKioskActive"><option value="true" ${kiosk.active?"selected":""}>Active</option><option value="false" ${!kiosk.active?"selected":""}>Inactive</option></select></div>
+    <div class="admin-actions"><button class="primary" onclick="saveKioskEdit('${kiosk.id}')">Save kiosk</button></div>
+  `;
+  section.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+
+async function saveKioskEdit(id){
+  const name = document.getElementById("editKioskName").value.trim();
+  const salesRepId = document.getElementById("editKioskRep").value || null;
+  const ip = document.getElementById("editKioskIp").value.trim() || null;
+  const activeValue = document.getElementById("editKioskActive").value === "true";
+
+  const { error } = await db.from("kiosks").update({
+    name,
+    sales_rep_id:salesRepId,
+    last_ip:ip,
+    active:activeValue
+  }).eq("id",id);
+
+  if(error){
+    adminStatus("Could not update kiosk: " + error.message);
+    return;
+  }
+
+  await refreshGameConfig();
+  await renderAdminDashboard("Kiosk updated.");
+}
+
+function dateKeyInTimezone(dateValue, timezone){
+  const parts = new Intl.DateTimeFormat("en-CA",{
+    timeZone:timezone || "UTC",
+    year:"numeric",
+    month:"2-digit",
+    day:"2-digit"
+  }).formatToParts(new Date(dateValue));
+
+  const out = {};
+  for(const part of parts){
+    if(part.type !== "literal") out[part.type] = part.value;
+  }
+  return `${out.year}-${out.month}-${out.day}`;
+}
+
+async function downloadAdminCsv(mode){
+  adminStatus("Preparing export...");
+
+  const { data, error } = await db
+    .from("game_entries")
+    .select("id,name,email,score_km,consent,source,played_at,event_id,kiosk_id,sales_rep_id,events(name,timezone),kiosks(name),sales_reps(name)")
+    .order("played_at",{ascending:false});
+
+  if(error){
+    adminStatus("Export failed: " + error.message);
+    return;
+  }
+
+  const settings = adminState.settings;
+  const event = adminState.events.find(e=>e.id===settings.current_event_id);
+  const timezone = event?.timezone || settings.global_timezone || "Europe/London";
+  const today = dateKeyInTimezone(new Date(), timezone);
+
+  let rows = data || [];
+
+  if(mode === "event"){
+    if(!settings.current_event_id){
+      adminStatus("There is no current event selected.");
+      return;
+    }
+    rows = rows.filter(x=>x.event_id===settings.current_event_id);
+  }
+
+  if(mode === "today"){
+    rows = rows.filter(x=>{
+      const correctEvent = settings.current_event_id
+        ? x.event_id === settings.current_event_id
+        : x.event_id === null;
+      return correctEvent && dateKeyInTimezone(x.played_at,timezone)===today;
+    });
+  }
+
+  if(!rows.length){
+    adminStatus("No entries match this export.");
+    return;
+  }
+
+  const csvRows = rows.map(x=>[
+    csvCell(x.name),
+    csvCell(x.email),
+    kmToMiles(Number(x.score_km)).toFixed(1),
+    csvCell(x.played_at),
+    x.consent ? "Yes" : "No",
+    csvCell(x.events?.name || "Global"),
+    csvCell(x.kiosks?.name || "Web"),
+    csvCell(x.sales_reps?.name || ""),
+    csvCell(x.source)
+  ].join(","));
+
+  const csv = [
+    "Name,Email,Distance_miles,Timestamp,Consent,Event,Kiosk,Sales_Rep,Source",
+    ...csvRows
+  ].join("\n");
+
+  const url = URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `utility-geo-guess-${mode}-${localDateKey()}.csv`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+
+  adminStatus(`${rows.length} entries exported.`);
+}
+
+async function logoutAndCloseAdmin(){
+  await db.auth.signOut();
+  closeAdmin();
+}
+
+function closeAdmin(){
+  document.getElementById("adminScreen").style.display = "none";
+  resetGame();
+}
+
+
+/* =========================================================
+   MAP VISUALS
+   ========================================================= */
+
+function showMarkers(
+  guess,
+  r
+){
+
+  removeVisuals();
+
+
+  guessMarker =
+    new mapboxgl.Marker({
+      color:"#f97316"
+    })
+    .setLngLat(
+      guess
+    )
+    .addTo(
+      map
+    );
+
+
+  trueMarker =
+    new mapboxgl.Marker({
+      color:"#22c55e"
+    })
+    .setLngLat([
+      r.lng,
+      r.lat
+    ])
+    .addTo(
+      map
+    );
+
+}
+
+
+function drawLine(
+  guess,
+  r
+){
+
+  removeLine();
+
+
+  map.addSource(
+    "distance-line",
+    {
+
+      type:"geojson",
+
+      data:{
+
+        type:"Feature",
+
+        geometry:{
+
+          type:"LineString",
+
+          coordinates:[
+
+            [
+              guess.lng,
+              guess.lat
+            ],
+
+            [
+              r.lng,
+              r.lat
+            ]
+
+          ]
+
+        }
+
+      }
+
+    }
+  );
+
+
+  map.addLayer({
+
+    id:
+      "distance-line",
+
+    type:
+      "line",
+
+    source:
+      "distance-line",
+
+    paint:{
+
+      "line-color":
+        "#38bdf8",
+
+      "line-width":
+        3
+
+    }
+
+  });
+
+}
+
+
+function removeLine(){
+
+  if(!map){
+    return;
+  }
+
+
+  if(
+    map.getLayer(
+      "distance-line"
+    )
+  ){
+
+    map.removeLayer(
+      "distance-line"
+    );
+
+  }
+
+
+  if(
+    map.getSource(
+      "distance-line"
+    )
+  ){
+
+    map.removeSource(
+      "distance-line"
+    );
+
+  }
+
+}
+
 
 function removeVisuals(){
+
   guessMarker?.remove();
+
   trueMarker?.remove();
-  if(map.getLayer("line")) map.removeLayer("line");
-  if(map.getSource("line")) map.removeSource("line");
+
+
+  guessMarker =
+    null;
+
+
+  trueMarker =
+    null;
+
+
+  removeLine();
+
 }
 
-function distance(a,b,c,d){
-  const R=6371;
-  const dl=(c-a)*Math.PI/180,do_=(d-b)*Math.PI/180;
-  const x=Math.sin(dl/2)**2+
-    Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*
-    Math.sin(do_/2)**2;
-  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+
+/* =========================================================
+   DISTANCE
+   ========================================================= */
+
+function distance(
+  a,
+  b,
+  c,
+  d
+){
+
+  const R =
+    6371;
+
+
+  const dLat =
+    (c-a) *
+    Math.PI /
+    180;
+
+
+  const dLon =
+    (d-b) *
+    Math.PI /
+    180;
+
+
+  const x =
+
+    Math.sin(
+      dLat/2
+    ) ** 2
+
+    +
+
+    Math.cos(
+      a *
+      Math.PI /
+      180
+    )
+
+    *
+
+    Math.cos(
+      c *
+      Math.PI /
+      180
+    )
+
+    *
+
+    Math.sin(
+      dLon/2
+    ) ** 2;
+
+
+  return (
+    R *
+    2 *
+    Math.atan2(
+      Math.sqrt(x),
+      Math.sqrt(1-x)
+    )
+  );
+
 }
+
+
+/* =========================================================
+   IMAGE ZOOM / PAN
+   ========================================================= */
+
+const imageViewport =
+  document
+    .getElementById(
+      "imageViewport"
+    );
+
+
+const surveyImage =
+  document
+    .getElementById(
+      "surveyImage"
+    );
+
+
+let imageZoom =
+  1;
+
+
+let imagePanX =
+  0;
+
+
+let imagePanY =
+  0;
+
+
+const pointers =
+  new Map();
+
+
+let pinchStartDistance =
+  0;
+
+
+let pinchStartZoom =
+  1;
+
+
+let dragStart =
+  null;
+
+
+function clamp(
+  value,
+  min,
+  max
+){
+
+  return Math.min(
+    Math.max(
+      value,
+      min
+    ),
+    max
+  );
+
+}
+
+
+function applyImageTransform(){
+
+  surveyImage
+    .style
+    .transform =
+
+      `translate(
+        ${imagePanX}px,
+        ${imagePanY}px
+      )
+      scale(
+        ${imageZoom}
+      )`;
+
+}
+
+
+function resetImageView(){
+
+  imageZoom =
+    1;
+
+
+  imagePanX =
+    0;
+
+
+  imagePanY =
+    0;
+
+
+  pointers.clear();
+
+
+  pinchStartDistance =
+    0;
+
+
+  dragStart =
+    null;
+
+
+  imageViewport
+    .classList
+    .remove(
+      "dragging"
+    );
+
+
+  applyImageTransform();
+
+}
+
+
+function pointerDistance(){
+
+  const pts =
+    [
+      ...pointers.values()
+    ];
+
+
+  if(
+    pts.length < 2
+  ){
+    return 0;
+  }
+
+
+  return Math.hypot(
+
+    pts[1].x -
+    pts[0].x,
+
+    pts[1].y -
+    pts[0].y
+
+  );
+
+}
+
+
+imageViewport
+  .addEventListener(
+    "wheel",
+    e=>{
+
+      e.preventDefault();
+
+
+      const oldZoom =
+        imageZoom;
+
+
+      imageZoom =
+        clamp(
+
+          imageZoom +
+          (
+            e.deltaY *
+            -0.001
+          ),
+
+          1,
+
+          4
+
+        );
+
+
+      if(
+        imageZoom === 1
+      ){
+
+        imagePanX =
+          0;
+
+
+        imagePanY =
+          0;
+
+      }
+
+      else if(
+        oldZoom !==
+        imageZoom
+      ){
+
+        imagePanX =
+          clamp(
+            imagePanX,
+            -600,
+            600
+          );
+
+
+        imagePanY =
+          clamp(
+            imagePanY,
+            -600,
+            600
+          );
+
+      }
+
+
+      applyImageTransform();
+
+    },
+
+    {
+      passive:false
+    }
+  );
+
+
+imageViewport
+  .addEventListener(
+    "pointerdown",
+    e=>{
+
+      imageViewport
+        .setPointerCapture?.(
+          e.pointerId
+        );
+
+
+      pointers.set(
+        e.pointerId,
+        {
+          x:e.clientX,
+          y:e.clientY
+        }
+      );
+
+
+      if(
+        pointers.size === 1
+      ){
+
+        dragStart = {
+
+          x:e.clientX,
+
+          y:e.clientY,
+
+          panX:imagePanX,
+
+          panY:imagePanY
+
+        };
+
+
+        if(
+          imageZoom > 1
+        ){
+
+          imageViewport
+            .classList
+            .add(
+              "dragging"
+            );
+
+        }
+
+      }
+
+
+      if(
+        pointers.size === 2
+      ){
+
+        pinchStartDistance =
+          pointerDistance();
+
+
+        pinchStartZoom =
+          imageZoom;
+
+
+        dragStart =
+          null;
+
+      }
+
+    }
+  );
+
+
+imageViewport
+  .addEventListener(
+    "pointermove",
+    e=>{
+
+      if(
+        !pointers.has(
+          e.pointerId
+        )
+      ){
+        return;
+      }
+
+
+      pointers.set(
+        e.pointerId,
+        {
+          x:e.clientX,
+          y:e.clientY
+        }
+      );
+
+
+      if(
+        pointers.size >= 2
+      ){
+
+        const d =
+          pointerDistance();
+
+
+        if(
+          pinchStartDistance > 0
+        ){
+
+          imageZoom =
+            clamp(
+
+              pinchStartZoom *
+              (
+                d /
+                pinchStartDistance
+              ),
+
+              1,
+
+              4
+
+            );
+
+
+          if(
+            imageZoom === 1
+          ){
+
+            imagePanX =
+              0;
+
+
+            imagePanY =
+              0;
+
+          }
+
+
+          applyImageTransform();
+
+        }
+
+
+        return;
+
+      }
+
+
+      if(
+        pointers.size === 1 &&
+        dragStart &&
+        imageZoom > 1
+      ){
+
+        imagePanX =
+          dragStart.panX +
+          (
+            e.clientX -
+            dragStart.x
+          );
+
+
+        imagePanY =
+          dragStart.panY +
+          (
+            e.clientY -
+            dragStart.y
+          );
+
+
+        applyImageTransform();
+
+      }
+
+    }
+  );
+
+
+function endPointer(e){
+
+  pointers.delete(
+    e.pointerId
+  );
+
+
+  if(
+    pointers.size === 1
+  ){
+
+    const remaining =
+      [
+        ...pointers.values()
+      ][0];
+
+
+    dragStart = {
+
+      x:remaining.x,
+
+      y:remaining.y,
+
+      panX:imagePanX,
+
+      panY:imagePanY
+
+    };
+
+
+    pinchStartDistance =
+      0;
+
+  }
+
+  else if(
+    pointers.size === 0
+  ){
+
+    dragStart =
+      null;
+
+
+    pinchStartDistance =
+      0;
+
+
+    imageViewport
+      .classList
+      .remove(
+        "dragging"
+      );
+
+  }
+
+}
+
+
+imageViewport
+  .addEventListener(
+    "pointerup",
+    endPointer
+  );
+
+
+imageViewport
+  .addEventListener(
+    "pointercancel",
+    endPointer
+  );
+
+
+imageViewport
+  .addEventListener(
+    "dblclick",
+    e=>{
+
+      e.preventDefault();
+
+      resetImageView();
+
+    }
+  );
+
+
+/* =========================================================
+   ATTRACT / SCREENSAVER
+   ========================================================= */
+
+let idleTimer =
+  null;
+
+
+let attractTimer =
+  null;
+
+
+let attractSlides =
+  [];
+
+
+let attractIndex =
+  0;
+
+
+let attractActive =
+  false;
+
+
+let attractStatsTimer =
+  null;
+
+
+async function refreshAttractStats(){
+
+  const el =
+    document.getElementById(
+      "attractStats"
+    );
+
+  if(!el){
+    return;
+  }
+
+  try {
+
+    const {
+      data,
+      error
+    } =
+      await db.rpc(
+        "get_live_game_stats",
+        {
+          p_device_key:DEVICE_KEY
+        }
+      );
+
+
+    if(error){
+      throw error;
+    }
+
+
+    const row =
+      Array.isArray(data)
+      ? data[0]
+      : data;
+
+
+    if(!row){
+      el.style.display = "none";
+      return;
+    }
+
+
+    const players =
+      Number(
+        row.players_today || 0
+      );
+
+
+    const best =
+      row.best_score_today === null
+      ? null
+      : Number(
+          row.best_score_today
+        );
+
+
+    const playersText =
+      players === 1
+      ? "1 PLAYER TODAY"
+      : `${players} PLAYERS TODAY`;
+
+
+    const bestText =
+      best === null
+      ? "NO SCORE YET"
+      : `BEST SCORE ${kmToMiles(best).toFixed(1)} MI`;
+
+
+    el.innerHTML =
+      `<strong>${playersText}</strong> &nbsp;•&nbsp; ${bestText}`;
+
+
+    el.style.display =
+      "block";
+
+  }
+  catch(err){
+
+    console.info(
+      "Live attract stats unavailable.",
+      err
+    );
+
+    el.style.display =
+      "none";
+
+  }
+
+}
+
+
+function startAttractStats(){
+
+  clearInterval(
+    attractStatsTimer
+  );
+
+  refreshAttractStats();
+
+  attractStatsTimer =
+    setInterval(
+      refreshAttractStats,
+      30000
+    );
+
+}
+
+
+function stopAttractStats(){
+
+  clearInterval(
+    attractStatsTimer
+  );
+
+  attractStatsTimer =
+    null;
+
+  const el =
+    document.getElementById(
+      "attractStats"
+    );
+
+  if(el){
+    el.style.display =
+      "none";
+  }
+
+}
+
+
+async function loadAttractSlides(){
+
+  try {
+
+    const response =
+      await fetch(
+
+        "screensaver/slides.csv",
+
+        {
+          cache:"no-store"
+        }
+
+      );
+
+
+    if(!response.ok){
+      return;
+    }
+
+
+    const text =
+      (
+        await response.text()
+      )
+      .replace(/\u0000/g,"")
+      .trim();
+
+
+    if(!text){
+      return;
+    }
+
+
+    attractSlides =
+
+      text
+        .split(/\r?\n/)
+
+        .slice(1)
+
+        .map(line=>{
+
+          const [
+            file,
+            duration
+          ] =
+          line
+            .split(",")
+            .map(v=>v.trim());
+
+
+          return {
+
+            file,
+
+            durationMs:
+              Math.max(
+                2,
+                Number(duration) || 8
+              )
+              *
+              1000
+
+          };
+
+        })
+
+        .filter(
+          s=>s.file
+        );
+
+
+    renderAttractSlides();
+
+  }
+
+  catch(err){
+
+    console.info(
+      "No screensaver/slides.csv found. Using built-in attract screen."
+    );
+
+  }
+
+}
+
+
+function renderAttractSlides(){
+
+  const container =
+    document
+      .getElementById(
+        "attractSlides"
+      );
+
+
+  container.innerHTML =
+    "";
+
+
+  attractSlides
+    .forEach(
+      (
+        slide,
+        index
+      )=>{
+
+        const el =
+          document
+            .createElement(
+              "div"
+            );
+
+
+        el.className =
+          "attract-slide";
+
+
+        el.dataset.index =
+          index;
+
+
+        el.style.backgroundImage =
+          `url("screensaver/${slide.file}")`;
+
+
+        container.appendChild(
+          el
+        );
+
+      }
+    );
+
+}
+
+
+function scheduleIdle(){
+
+  clearTimeout(
+    idleTimer
+  );
+
+
+  if(
+    attractActive ||
+    currentMode === "playing"
+  ){
+    return;
+  }
+
+
+  idleTimer =
+    setTimeout(
+      ()=>{
+
+        enterAttractMode();
+
+      },
+
+      IDLE_TIMEOUT_MS
+    );
+
+}
+
+
+function enterAttractMode(){
+
+  clearInterval(
+    timerId
+  );
+
+  hideCountdown();
+
+
+  clearTimeout(
+    idleTimer
+  );
+
+
+  active =
+    false;
+
+
+  attractActive =
+    true;
+
+
+  currentMode =
+    "attract";
+
+
+  document
+    .getElementById(
+      "attractMode"
+    )
+    .style.display =
+      "block";
+
+
+  attractIndex =
+    0;
+
+
+  startAttractStats();
+
+  startAttractRotation();
+
+}
+
+
+function startAttractRotation(){
+
+  clearTimeout(
+    attractTimer
+  );
+
+
+  const fallback =
+    document
+      .getElementById(
+        "attractFallback"
+      );
+
+
+  const slideElements =
+    [
+      ...document
+        .querySelectorAll(
+          ".attract-slide"
+        )
+    ];
+
+
+  slideElements
+    .forEach(
+      el=>
+        el
+          .classList
+          .remove(
+            "active"
+          )
+    );
+
+
+  if(
+    attractSlides.length === 0
+  ){
+
+    fallback.style.display =
+      "flex";
+
+
+    return;
+
+  }
+
+
+  fallback.style.display =
+    "none";
+
+
+  const showCurrent =
+    ()=>{
+
+      slideElements
+        .forEach(
+          el=>
+            el
+              .classList
+              .remove(
+                "active"
+              )
+        );
+
+
+      const el =
+        slideElements[
+          attractIndex
+        ];
+
+
+      if(el){
+
+        el
+          .classList
+          .add(
+            "active"
+          );
+
+      }
+
+
+      const duration =
+        attractSlides[
+          attractIndex
+        ]?.durationMs
+        ||
+        DEFAULT_SLIDE_MS;
+
+
+      attractTimer =
+        setTimeout(
+          ()=>{
+
+            attractIndex =
+              (
+                attractIndex + 1
+              )
+              %
+              attractSlides.length;
+
+
+            showCurrent();
+
+          },
+
+          duration
+        );
+
+    };
+
+
+  showCurrent();
+
+}
+
+
+function exitAttractMode(){
+
+  if(
+    !attractActive
+  ){
+    return;
+  }
+
+
+  clearTimeout(
+    attractTimer
+  );
+
+  stopAttractStats();
+
+
+  attractActive =
+    false;
+
+
+  document
+    .getElementById(
+      "attractMode"
+    )
+    .style.display =
+      "none";
+
+
+  resetGame();
+
+}
+
+
+document
+  .getElementById(
+    "attractMode"
+  )
+  .addEventListener(
+    "pointerdown",
+    exitAttractMode
+  );
+
+
+document
+  .addEventListener(
+    "keydown",
+    ()=>{
+
+      if(
+        attractActive
+      ){
+
+        exitAttractMode();
+
+      }
+
+      else {
+
+        scheduleIdle();
+
+      }
+
+    }
+  );
+
+
+document
+  .addEventListener(
+    "pointerdown",
+    ()=>{
+
+      if(
+        !attractActive
+      ){
+
+        scheduleIdle();
+
+      }
+
+    },
+    {
+      passive:true
+    }
+  );
+
+
+document
+  .addEventListener(
+    "wheel",
+    ()=>{
+
+      if(
+        !attractActive
+      ){
+
+        scheduleIdle();
+
+      }
+
+    },
+    {
+      passive:true
+    }
+  );
+
+
+/* =========================================================
+   HELPERS
+   ========================================================= */
+
+function localDateKey(){
+
+  const d =
+    new Date();
+
+
+  const y =
+    d.getFullYear();
+
+
+  const m =
+    String(
+      d.getMonth() + 1
+    )
+    .padStart(
+      2,
+      "0"
+    );
+
+
+  const day =
+    String(
+      d.getDate()
+    )
+    .padStart(
+      2,
+      "0"
+    );
+
+
+  return (
+    `${y}-${m}-${day}`
+  );
+
+}
+
+
+function escapeHtml(value){
+
+  return String(value)
+
+    .replace(
+      /&/g,
+      "&amp;"
+    )
+
+    .replace(
+      /</g,
+      "&lt;"
+    )
+
+    .replace(
+      />/g,
+      "&gt;"
+    )
+
+    .replace(
+      /"/g,
+      "&quot;"
+    )
+
+    .replace(
+      /'/g,
+      "&#039;"
+    );
+
+}
+
+
+function csvCell(value){
+
+  return (
+    `"${
+
+      String(
+        value ?? ""
+      )
+      .replace(
+        /"/g,
+        '""'
+      )
+
+    }"`
+  );
+
+}
+
 </script>
 
 </body>
