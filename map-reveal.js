@@ -55,7 +55,7 @@ function revealUpdate(){
 // The clearing is a deterministic irregular region, never a circle centred on the target.
 function revealRegion(){
   const r=revealCurrent,seed=revealHash(r.file);
-  const areas=[0,180000,9000,200];
+  const areas=[0,2500000,700000,180000];
   const radius=Math.sqrt(areas[revealLevel]/Math.PI);
   const latitudeMiles=1/69,longitudeMiles=1/(69.172*Math.max(.15,Math.cos(r.lat*Math.PI/180)));
   const angle=(seed%360)*Math.PI/180;
@@ -79,12 +79,8 @@ function revealBuy(){
   revealCanvas.style.display='block';
   revealUpdate();
   const region=revealRegion();
-  // Fit the revealed area to the available map, even for the final 200 mi² hint.
-  const extent=region.radius*1.65;
-  map.fitBounds([
-    [region.center[0]-extent*region.longitudeMiles,region.center[1]-extent*region.latitudeMiles],
-    [region.center[0]+extent*region.longitudeMiles,region.center[1]+extent*region.latitudeMiles]
-  ],{padding:{top:75,bottom:100,left:55,right:55},duration:650,maxZoom:11});
+  // Keep a consistent geographic view so successive hints genuinely narrow the region.
+  // Do not automatically zoom to the smaller region.
   revealDraw();
 }
 function revealDraw(){
@@ -115,5 +111,17 @@ function revealDraw(){
   ctx.closePath();
   ctx.fillStyle='#000';
   ctx.fill();
+  ctx.restore();
+  // Subtle lime halo along the soft boundary; never draw a precise hard outline.
+  ctx.save();
+  ctx.beginPath();
+  vertices.forEach((v,i)=>i?ctx.lineTo(v.x,v.y):ctx.moveTo(v.x,v.y));
+  ctx.closePath();
+  ctx.shadowColor='rgba(174,226,87,.8)';
+  ctx.shadowBlur=18;
+  ctx.strokeStyle='rgba(176,221,105,.26)';
+  ctx.lineWidth=3;
+  ctx.filter='blur(7px)';
+  ctx.stroke();
   ctx.restore();
 }
