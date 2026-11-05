@@ -18,7 +18,7 @@ function revealSetup(){
   const controls=document.createElement('div');
   controls.id='revealControls';
   controls.innerHTML='<button id="revealButton" type="button">Reveal map · +200 mi</button><span id="revealStatus">0/3 hints · +0 mi</span>';
-  Object.assign(controls.style,{position:'absolute',bottom:'16px',left:'12px',zIndex:'8',display:'none',alignItems:'center',gap:'9px',flexWrap:'wrap'});
+  Object.assign(controls.style,{position:'absolute',bottom:'34px',left:'12px',zIndex:'8',display:'none',alignItems:'center',gap:'9px',flexWrap:'wrap'});
   panel.appendChild(controls);
   const btn=document.getElementById('revealButton');
   Object.assign(btn.style,{background:'#8dc63f',color:'#091323',border:'0',borderRadius:'8px',padding:'12px 15px',fontWeight:'800',cursor:'pointer'});
@@ -52,12 +52,39 @@ function revealUpdate(){
   b.textContent=revealLevel>=3?'All hints used':'Reveal map · +200 mi';
   status.textContent=revealLevel+'/3 hints · +'+(revealLevel*REVEAL_COST_MI)+' mi';
 }
+// The clearing is a deterministic irregular region, never a circle centred on the target.
+function revealRegion(){
+  const r=revealCurrent,seed=revealHash(r.file);
+  const areas=[0,180000,9000,200];
+  const radius=Math.sqrt(areas[revealLevel]/Math.PI);
+  const latitudeMiles=1/69,longitudeMiles=1/(69.172*Math.max(.15,Math.cos(r.lat*Math.PI/180)));
+  const angle=(seed%360)*Math.PI/180;
+  // Keep the actual point well inside the region without placing it at the centre.
+  const offsetX=(((seed>>>3)%17)-8)/32;
+  const offsetY=(((seed>>>9)%17)-8)/32;
+  const center=[r.lng+offsetX*radius*longitudeMiles,r.lat+offsetY*radius*latitudeMiles];
+  const points=[];
+  for(let i=0;i<24;i++){
+    const theta=i*Math.PI*2/24;
+    const wave=1+.13*Math.sin(3*theta+angle)+.09*Math.sin(5*theta-angle*.7)+.05*Math.cos(7*theta+angle);
+    const x=Math.cos(theta)*radius*wave,y=Math.sin(theta)*radius*wave;
+    points.push([center[0]+x*longitudeMiles,center[1]+y*latitudeMiles]);
+  }
+  return {center,points,radius,latitudeMiles,longitudeMiles};
+}
 function revealBuy(){
   if(!active||!revealCurrent||revealLevel>=3)return;
   revealLevel++;
   revealPenaltiesKm+=revealMilesToKm(REVEAL_COST_MI);
   revealCanvas.style.display='block';
   revealUpdate();
+  const region=revealRegion();
+  // Fit the revealed area to the available map, even for the final 200 mi² hint.
+  const extent=region.radius*1.65;
+  map.fitBounds([
+    [region.center[0]-extent*region.longitudeMiles,region.center[1]-extent*region.latitudeMiles],
+    [region.center[0]+extent*region.longitudeMiles,region.center[1]+extent*region.latitudeMiles]
+  ],{padding:{top:75,bottom:100,left:55,right:55},duration:650,maxZoom:11});
   revealDraw();
 }
 function revealDraw(){
@@ -66,36 +93,27 @@ function revealDraw(){
   if(!w||!h)return;
   const dpr=Math.min(window.devicePixelRatio||1,2);
   revealCanvas.width=Math.round(w*dpr);revealCanvas.height=Math.round(h*dpr);
-  const ctx=revealCtx;ctx.setTransform(dpr,0,0,dpr,0,0);
+  const ctx=revealCtx;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,w,h);
-  ctx.fillStyle='rgba(5,13,26,.80)';ctx.fillRect(0,0,w,h);
-  const r=revealCurrent,seed=revealHash(r.file);
-  // Elliptical irregular clearing area. The true location is deliberately off-centre.
-  // Level 3 ellipse is approximately 200 square miles (area, not radius).
-  const areas=[0,180000,9000,200];
-  const radiusMiles=Math.sqrt(areas[revealLevel]/Math.PI);
-  const latRad=r.lat*Math.PI/180;
-  const mileLat=1/69.0,mileLng=1/(69.172*Math.max(.15,Math.cos(latRad)));
-  const skew=.78+((seed%31)/100);
-  const angle=(seed%360)*Math.PI/180;
-  const offsetX=((seed%13)-6)/15,offsetY=(((seed>>>5)%13)-6)/15;
-  const cx=r.lng+offsetX*radiusMiles*mileLng*.48;
-  const cy=r.lat+offsetY*radiusMiles*mileLat*.48;
-  const origin=map.project([cx,cy]);
-  const edge=map.project([cx+radiusMiles*mileLng,cy]);
-  const north=map.project([cx,cy+radiusMiles*mileLat]);
-  const rx=Math.max(2,Math.abs(edge.x-origin.x)*skew),ry=Math.max(2,Math.abs(north.y-origin.y)/skew);
-  ctx.save();ctx.globalCompositeOperation='destination-out';
-  ctx.translate(origin.x,origin.y);ctx.rotate(angle);
-  // Soft, asymmetric boundary, with no hard edge and no target pin.
-  for(let i=0;i<9;i++){
-    const a=i*Math.PI*2/9,variation=.83+((revealHash(r.file+':'+i)%35)/100);
-    const px=Math.cos(a)*rx*.36*variation,py=Math.sin(a)*ry*.36*variation;
-    const rad=Math.max(1,Math.min(rx,ry)*.76);
-    ctx.save();ctx.translate(px,py);ctx.scale(Math.max(.1,rx/Math.max(1,ry)),1);
-    const g=ctx.createRadialGradient(0,0,rad*.35,0,0,rad);
-    g.addColorStop(0,'rgba(0,0,0,1)');g.addColorStop(.55,'rgba(0,0,0,.95)');g.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,rad,0,Math.PI*2);ctx.fill();ctx.restore();
-  }
+  // The rest of the map remains readable through a lighter fog.
+  ctx.fillStyle='rgba(5,13,26,.59)';
+  ctx.fillRect(0,0,w,h);
+  const region=revealRegion();
+  const vertices=region.points.map(p=>map.project(p));
+  const centre=map.project(region.center);
+  const east=map.project([region.center[0]+region.radius*region.longitudeMiles,region.center[1]]);
+  const north=map.project([region.center[0],region.center[1]+region.radius*region.latitudeMiles]);
+  const pixelRadius=Math.max(1,Math.min(Math.abs(east.x-centre.x),Math.abs(north.y-centre.y)));
+  const feather=Math.max(5,Math.min(28,pixelRadius*.18));
+  ctx.save();
+  ctx.globalCompositeOperation='destination-out';
+  // Blur only the clearing, not the underlying map.
+  ctx.filter='blur('+feather+'px)';
+  ctx.beginPath();
+  vertices.forEach((v,i)=>i?ctx.lineTo(v.x,v.y):ctx.moveTo(v.x,v.y));
+  ctx.closePath();
+  ctx.fillStyle='#000';
+  ctx.fill();
   ctx.restore();
 }
