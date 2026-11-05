@@ -58,19 +58,17 @@ function revealRegion(){
   const areas=[0,2500000,700000,180000];
   const radius=Math.sqrt(areas[revealLevel]/Math.PI);
   const latitudeMiles=1/69,longitudeMiles=1/(69.172*Math.max(.15,Math.cos(r.lat*Math.PI/180)));
-  const angle=(seed%360)*Math.PI/180;
-  // Keep the actual point well inside the region without placing it at the centre.
-  const offsetX=(((seed>>>3)%17)-8)/32;
-  const offsetY=(((seed>>>9)%17)-8)/32;
-  const center=[r.lng+offsetX*radius*longitudeMiles,r.lat+offsetY*radius*latitudeMiles];
+  const phase=(revealHash(r.file+":phase:"+revealLevel)%6283)/1000;
+  const phase2=(revealHash(r.file+":detail:"+revealLevel)%6283)/1000;
+  const bias=(revealHash(r.file+":bias:"+revealLevel)%6283)/1000;
   const points=[];
-  for(let i=0;i<24;i++){
-    const theta=i*Math.PI*2/24;
-    const wave=1+.13*Math.sin(3*theta+angle)+.09*Math.sin(5*theta-angle*.7)+.05*Math.cos(7*theta+angle);
-    const x=Math.cos(theta)*radius*wave,y=Math.sin(theta)*radius*wave;
-    points.push([center[0]+x*longitudeMiles,center[1]+y*latitudeMiles]);
+  for(let i=0;i<96;i++){
+    const theta=i*2*Math.PI/96;
+    const wave=1+.20*Math.cos(theta-bias)+.11*Math.sin(3*theta+phase)+.07*Math.cos(5*theta+phase2)+.035*Math.sin(8*theta+phase);
+    const dist=radius*wave;
+    points.push([r.lng+Math.cos(theta)*dist*longitudeMiles,Math.max(-84,Math.min(84,r.lat+Math.sin(theta)*dist*latitudeMiles))]);
   }
-  return {center,points,radius,latitudeMiles,longitudeMiles};
+  return {points,radius,latitudeMiles,longitudeMiles};
 }
 function revealBuy(){
   if(!active||!revealCurrent||revealLevel>=3)return;
@@ -78,9 +76,6 @@ function revealBuy(){
   revealPenaltiesKm+=revealMilesToKm(REVEAL_COST_MI);
   revealCanvas.style.display='block';
   revealUpdate();
-  const region=revealRegion();
-  // Keep a consistent geographic view so successive hints genuinely narrow the region.
-  // Do not automatically zoom to the smaller region.
   revealDraw();
 }
 function revealDraw(){
@@ -93,13 +88,13 @@ function revealDraw(){
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,w,h);
   // The rest of the map remains readable through a lighter fog.
-  ctx.fillStyle='rgba(5,13,26,.59)';
+  ctx.fillStyle='rgba(130,143,151,.35)';
   ctx.fillRect(0,0,w,h);
   const region=revealRegion();
   const vertices=region.points.map(p=>map.project(p));
-  const centre=map.project(region.center);
-  const east=map.project([region.center[0]+region.radius*region.longitudeMiles,region.center[1]]);
-  const north=map.project([region.center[0],region.center[1]+region.radius*region.latitudeMiles]);
+  const centre=map.project([revealCurrent.lng,revealCurrent.lat]);
+  const east=map.project([revealCurrent.lng+region.radius*region.longitudeMiles,revealCurrent.lat]);
+  const north=map.project([revealCurrent.lng,revealCurrent.lat+region.radius*region.latitudeMiles]);
   const pixelRadius=Math.max(1,Math.min(Math.abs(east.x-centre.x),Math.abs(north.y-centre.y)));
   const feather=Math.max(5,Math.min(28,pixelRadius*.18));
   ctx.save();
@@ -117,9 +112,9 @@ function revealDraw(){
   ctx.beginPath();
   vertices.forEach((v,i)=>i?ctx.lineTo(v.x,v.y):ctx.moveTo(v.x,v.y));
   ctx.closePath();
-  ctx.shadowColor='rgba(174,226,87,.8)';
+  ctx.shadowColor='rgba(125,190,38,.72)';
   ctx.shadowBlur=18;
-  ctx.strokeStyle='rgba(176,221,105,.26)';
+  ctx.strokeStyle='rgba(119,174,38,.34)';
   ctx.lineWidth=3;
   ctx.filter='blur(7px)';
   ctx.stroke();
