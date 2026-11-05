@@ -32,6 +32,7 @@ function revealSetup(){
 function revealBegin(r){
   revealSetup();
   revealCurrent=r;
+  revealRegions=null;
   revealLevel=0;
   revealPenaltiesKm=0;
   document.getElementById('revealControls').style.display='flex';
@@ -52,23 +53,54 @@ function revealUpdate(){
   b.textContent=revealLevel>=3?'All hints used':'Reveal map · +200 mi';
   status.textContent=revealLevel+'/3 hints · +'+(revealLevel*REVEAL_COST_MI)+' mi';
 }
-// The clearing is a deterministic irregular region, never a circle centred on the target.
-function revealRegion(){
-  const r=revealCurrent,seed=revealHash(r.file);
-  const areas=[0,2500000,700000,180000];
-  const radius=Math.sqrt(areas[revealLevel]/Math.PI);
-  const latitudeMiles=1/69,longitudeMiles=1/(69.172*Math.max(.15,Math.cos(r.lat*Math.PI/180)));
-  const phase=(revealHash(r.file+":phase:"+revealLevel)%6283)/1000;
-  const phase2=(revealHash(r.file+":detail:"+revealLevel)%6283)/1000;
-  const bias=(revealHash(r.file+":bias:"+revealLevel)%6283)/1000;
-  const points=[];
-  for(let i=0;i<96;i++){
-    const theta=i*2*Math.PI/96;
-    const wave=1+.20*Math.cos(theta-bias)+.11*Math.sin(3*theta+phase)+.07*Math.cos(5*theta+phase2)+.035*Math.sin(8*theta+phase);
-    const dist=radius*wave;
-    points.push([r.lng+Math.cos(theta)*dist*longitudeMiles,Math.max(-84,Math.min(84,r.lat+Math.sin(theta)*dist*latitudeMiles))]);
+// Build three independently shaped, nested regions. A different displaced centre
+// drives each hint; the target is inside, never marked or used as a visual centre.
+// Store the shapes once per image so panning/zooming cannot change the hint.
+let revealRegions = null;
+function revealBuildRegions(){
+  const r=revealCurrent;
+  const latMiles=1/69;
+  const lonMiles=1/(69.172*Math.max(.15,Math.cos(r.lat*Math.PI/180)));
+  const areas=[2500000,700000,180000];
+  const N=144;
+  const radii=[];
+  const regions=[];
+  for(let level=0;level<3;level++){
+    const nominal=Math.sqrt(areas[level]/Math.PI);
+    const seed=revealHash(r.file+":region:"+level);
+    const heading=(seed%6283)/1000;
+    const detail=((seed>>>8)%6283)/1000;
+    const third=((seed>>>16)%6283)/1000;
+    const current=[];
+    for(let i=0;i<N;i++){
+      const angle=i*2*Math.PI/N;
+      // Strong first harmonic shifts the polygon's centroid. Higher harmonics
+      // create a different silhouette for each level, not scaled copies.
+      const factor=1
+        +.40*Math.cos(angle-heading)
+        +.20*Math.sin(2*angle+detail)
+        +.13*Math.cos(4*angle+third)
+        +.075*Math.sin(7*angle-heading);
+      let distance=nominal*Math.max(.25,factor);
+      // Strict containment: every new contour stays inside the preceding one.
+      if(level>0)distance=Math.min(distance,radii[level-1][i]*.88);
+      current.push(distance);
+    }
+    radii.push(current);
+    const points=current.map((distance,i)=>{
+      const angle=i*2*Math.PI/N;
+      return [
+        r.lng+Math.cos(angle)*distance*lonMiles,
+        Math.max(-84,Math.min(84,r.lat+Math.sin(angle)*distance*latMiles))
+      ];
+    });
+    regions.push({points,radius:nominal,latitudeMiles:latMiles,longitudeMiles:lonMiles});
   }
-  return {points,radius,latitudeMiles,longitudeMiles};
+  return regions;
+}
+function revealRegion(){
+  if(!revealRegions)revealRegions=revealBuildRegions();
+  return revealRegions[revealLevel-1];
 }
 function revealBuy(){
   if(!active||!revealCurrent||revealLevel>=3)return;
