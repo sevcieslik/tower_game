@@ -53,48 +53,63 @@ function revealUpdate(){
   b.textContent=revealLevel>=3?'All hints used':'Reveal map · +200 mi';
   status.textContent=revealLevel+'/3 hints · +'+(revealLevel*REVEAL_COST_MI)+' mi';
 }
-// Build three independently shaped, nested regions. A different displaced centre
-// drives each hint; the target is inside, never marked or used as a visual centre.
-// Store the shapes once per image so panning/zooming cannot change the hint.
+// Independent offset polygons in a local miles coordinate system.
+// The target is only a containment constraint, not the polygon centre.
 let revealRegions = null;
+function revealInside(point,polygon){
+  let inside=false;
+  for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
+    const a=polygon[i],b=polygon[j];
+    if(((a[1]>point[1])!==(b[1]>point[1])) &&
+       point[0]<(b[0]-a[0])*(point[1]-a[1])/(b[1]-a[1])+a[0])inside=!inside;
+  }
+  return inside;
+}
 function revealBuildRegions(){
   const r=revealCurrent;
   const latMiles=1/69;
   const lonMiles=1/(69.172*Math.max(.15,Math.cos(r.lat*Math.PI/180)));
   const areas=[2500000,700000,180000];
-  const N=144;
-  const radii=[];
   const regions=[];
+  let parent=null;
   for(let level=0;level<3;level++){
-    const nominal=Math.sqrt(areas[level]/Math.PI);
-    const seed=revealHash(r.file+":region:"+level);
-    const heading=(seed%6283)/1000;
-    const detail=((seed>>>8)%6283)/1000;
-    const third=((seed>>>16)%6283)/1000;
-    const current=[];
-    for(let i=0;i<N;i++){
-      const angle=i*2*Math.PI/N;
-      // Strong first harmonic shifts the polygon's centroid. Higher harmonics
-      // create a different silhouette for each level, not scaled copies.
-      const factor=1
-        +.40*Math.cos(angle-heading)
-        +.20*Math.sin(2*angle+detail)
-        +.13*Math.cos(4*angle+third)
-        +.075*Math.sin(7*angle-heading);
-      let distance=nominal*Math.max(.25,factor);
-      // Strict containment: every new contour stays inside the preceding one.
-      if(level>0)distance=Math.min(distance,radii[level-1][i]*.88);
-      current.push(distance);
-    }
-    radii.push(current);
-    const points=current.map((distance,i)=>{
-      const angle=i*2*Math.PI/N;
-      return [
-        r.lng+Math.cos(angle)*distance*lonMiles,
-        Math.max(-84,Math.min(84,r.lat+Math.sin(angle)*distance*latMiles))
-      ];
+    const radius=Math.sqrt(areas[level]/Math.PI);
+    const seed=revealHash(r.file+":independent:"+level);
+    const direction=(seed%6283)/1000;
+    const offset=radius*(level===0?.60:level===1?.42:.35);
+    // Every level has its own centre, phase, orientation and silhouette.
+    const center=[Math.cos(direction)*offset,Math.sin(direction)*offset];
+    const orientation=((seed>>>9)%6283)/1000;
+    const p2=((seed>>>17)%6283)/1000;
+    const p3=((seed>>>23)%6283)/1000;
+    const build=scale=>Array.from({length:128},(_,i)=>{
+      const angle=2*Math.PI*i/128;
+      const distortion=1+.21*Math.sin(3*angle+p2)+.15*Math.cos(5*angle+p3)+.09*Math.sin(8*angle+orientation);
+      const d=radius*scale*distortion;
+      return [center[0]+Math.cos(angle)*d,center[1]+Math.sin(angle)*d];
     });
-    regions.push({points,radius:nominal,latitudeMiles:latMiles,longitudeMiles:lonMiles});
+    let scale=1;
+    let polygon=build(scale);
+    // Ensure the actual location and the entire child shape are inside the parent.
+    // Shrink only when needed; the next shape is never a scaled parent contour.
+    for(let attempt=0;attempt<50;attempt++){
+      if(revealInside([0,0],polygon)&&(!parent||polygon.every(p=>revealInside(p,parent))))break;
+      scale*=.96;
+      polygon=build(scale);
+    }
+    // In unlikely pathological cases, centre the shape on an interior position.
+    if(!revealInside([0,0],polygon)|| (parent&&!polygon.every(p=>revealInside(p,parent)))){
+      const fallbackCenter=[0,0];
+      center[0]=fallbackCenter[0];center[1]=fallbackCenter[1];
+      scale=.65;
+      polygon=build(scale);
+      while(parent&&!polygon.every(p=>revealInside(p,parent))&&scale>.01){
+        scale*=.9;polygon=build(scale);
+      }
+    }
+    parent=polygon;
+    const points=polygon.map(([x,y])=>[r.lng+x*lonMiles,r.lat+y*latMiles]);
+    regions.push({points,radius,latitudeMiles:latMiles,longitudeMiles:lonMiles,centroid:[r.lng+center[0]*lonMiles,r.lat+center[1]*latMiles]});
   }
   return regions;
 }
