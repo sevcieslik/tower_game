@@ -1269,7 +1269,7 @@ button.secondary {
     width:min(440px,calc(100vw - 32px));
   }
 }
-</style>
+ .reveal-attract-note{position:absolute;bottom:68px;left:50%;transform:translateX(-50%);z-index:20;background:rgba(2,9,23,.88);border:1px solid rgba(141,198,63,.65);color:#d9f6a2;padding:12px 24px;border-radius:12px;text-align:center;font:700 clamp(13px,1.5vw,24px) Arial,sans-serif;letter-spacing:.03em;pointer-events:none;max-width:90%;box-sizing:border-box}\n</style>
 </head>
 
 <body>
@@ -1378,14 +1378,14 @@ button.secondary {
       <div class="rule-item">
         <div class="rule-icon">03</div>
         <div class="rule-text">
-          Your score is your total distance from the correct locations
+          Your score is distance plus any hint penalties
         </div>
       </div>
 
       <div class="rule-item">
         <div class="rule-icon">04</div>
         <div class="rule-text">
-          Lowest total distance wins
+          Reveal up to 3 fog hints per round, +200 miles each. Lowest total wins
         </div>
       </div>
 
@@ -1440,6 +1440,7 @@ button.secondary {
 >
 
   <div id="attractSlides"></div>
+  <div class="reveal-attract-note">NEW: MAP REVEAL HINTS · 3 FOG REVEALS · +200 MI EACH</div>
 
   <div
     class="attract-fallback"
@@ -2115,6 +2116,7 @@ function resetGame(){
 
 
   removeVisuals();
+  revealHide();
 
   resetImageView();
 
@@ -2318,6 +2320,8 @@ function showRound(){
 
   }
 
+
+  revealBegin(current);
 
   document
     .getElementById("roundTitle")
@@ -2729,7 +2733,7 @@ function startTimer(){
         // A missed round gets the maximum possible distance,
         // so timing out can never be better than making a guess.
         total +=
-          TIMEOUT_PENALTY_KM;
+          TIMEOUT_PENALTY_KM + revealPenaltiesKm;
 
         addRoundResult(
           TIMEOUT_PENALTY_KM,
@@ -2793,7 +2797,7 @@ function onMapClick(e){
     );
 
 
-  total += d;
+  total += d + revealPenaltiesKm;
 
   addRoundResult(
     d,
@@ -2884,6 +2888,9 @@ function addRoundResult(
 
   roundResults.push({
     round:round + 1,
+    hints:revealLevel,
+    hintPenaltyKm:revealPenaltiesKm,
+    scoredDistance: Number.isFinite(distanceKm) ? distanceKm + revealPenaltiesKm : null,
     distance:
       Number.isFinite(distanceKm)
       ? distanceKm
@@ -2917,9 +2924,10 @@ function renderRoundHistory(){
               ${
                 item.distance === null
                 ? "—"
-                : kmToMiles(item.distance).toFixed(1) + " mi"
+                : kmToMiles(item.scoredDistance).toFixed(1) + " mi"
               }
             </div>
+            <div class="round-hint-penalty" style="font-size:12px;color:#b7cf80">${item.hints ? item.hints + " hint(s) · +" + (item.hints*200) + " mi" : "No hints"}</div>
             <div
               class="round-history-comment"
               title="${escapeHtml(item.comment)}"
@@ -2945,6 +2953,7 @@ function showRoundPopup(
 ){
 
   hideCountdown();
+  revealHide();
 
   currentMode =
     "roundResult";
@@ -2998,6 +3007,7 @@ function showRoundPopup(
         }
       </div>
 
+      <div style="font-size:15px;color:#c5e84b;margin:8px 0">Hints: ${revealLevel}/3 · Penalty: +${revealLevel*200} mi · Round score: ${d === null ? "—" : (kmToMiles(d)+revealLevel*200).toFixed(1)+" mi"}</div>
       <div class="round-total">
         ${
           status === "timeout"
@@ -5975,6 +5985,6 @@ function csvCell(value){
 }
 
 </script>
-
+<script src="map-reveal.js"></script>
 </body>
 </html>
