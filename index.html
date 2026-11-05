@@ -1269,7 +1269,25 @@ button.secondary {
     width:min(440px,calc(100vw - 32px));
   }
 }
- .reveal-attract-note{position:absolute;bottom:68px;left:50%;transform:translateX(-50%);z-index:20;background:rgba(2,9,23,.88);border:1px solid rgba(141,198,63,.65);color:#d9f6a2;padding:12px 24px;border-radius:12px;text-align:center;font:700 clamp(13px,1.5vw,24px) Arial,sans-serif;letter-spacing:.03em;pointer-events:none;max-width:90%;box-sizing:border-box}\n</style>
+ .reveal-attract-note{position:absolute;bottom:68px;left:50%;transform:translateX(-50%);z-index:20;background:rgba(2,9,23,.88);border:1px solid rgba(141,198,63,.65);color:#d9f6a2;padding:12px 24px;border-radius:12px;text-align:center;font:700 clamp(13px,1.5vw,24px) Arial,sans-serif;letter-spacing:.03em;pointer-events:none;max-width:90%;box-sizing:border-box}\n 
+/* Dedicated attract-mode feature slide, not an overlay on existing artwork. */
+.hint-feature-slide{background:radial-gradient(ellipse at 78% 46%,rgba(140,198,63,.17),transparent 37%),linear-gradient(125deg,#051426,#0b2030 60%,#06101e);color:#fff;font-family:Arial,sans-serif;overflow:hidden}
+.hint-feature-slide::before{content:"";position:absolute;right:-12%;top:-22%;width:72%;height:140%;background:repeating-radial-gradient(ellipse at 50% 50%,transparent 0 35px,rgba(141,198,63,.13) 36px 37px,transparent 38px 73px);transform:rotate(-21deg);opacity:.75}
+.hint-feature-brand{position:absolute;top:5%;left:5%;font-size:clamp(30px,4vw,64px);font-weight:700;color:#8dc63f;letter-spacing:-.06em}
+.hint-feature-brand span{font-size:.47em;letter-spacing:-.03em;font-weight:400}
+.hint-feature-content{position:absolute;left:6%;top:23%;right:6%;z-index:1}
+.hint-feature-eyebrow{color:#c1e781;letter-spacing:.25em;font-size:clamp(12px,1.3vw,20px);font-weight:700}
+.hint-feature-content h2{font-size:clamp(52px,8vw,136px);line-height:1;margin:2.8% 0 1%;font-weight:900;letter-spacing:-.055em}
+.hint-feature-content h2 em{font-style:normal;color:#8dc63f}
+.hint-feature-content p{font-size:clamp(22px,2.4vw,38px);color:#e4ebf3;margin:0 0 4%}
+.hint-feature-steps{display:flex;gap:2%;width:min(100%,1100px)}
+.hint-feature-steps div{flex:1;border:1px solid rgba(141,198,63,.48);background:rgba(8,21,38,.8);border-radius:12px;padding:2%}
+.hint-feature-steps strong{display:block;font-size:clamp(24px,3vw,50px);color:#8dc63f;margin-bottom:8px}
+.hint-feature-steps span{font-size:clamp(14px,1.7vw,25px);font-weight:700}
+.hint-feature-cost{margin-top:3%;font-size:clamp(19px,2.4vw,36px);font-weight:800;color:#c4ec80}
+.hint-feature-footer{margin-top:1.5%;font-size:clamp(14px,1.5vw,23px);color:#bac8d4}
+
+</style>
 </head>
 
 <body>
@@ -1440,7 +1458,7 @@ button.secondary {
 >
 
   <div id="attractSlides"></div>
-  <div class="reveal-attract-note">NEW: MAP REVEAL HINTS · 3 FOG REVEALS · +200 MI EACH</div>
+  
 
   <div
     class="attract-fallback"
@@ -5583,8 +5601,26 @@ function renderAttractSlides(){
           index;
 
 
-        el.style.backgroundImage =
-          `url("screensaver/${slide.file}")`;
+        if(slide.file === "hint_reveal"){
+          el.classList.add("hint-feature-slide");
+          el.innerHTML = `
+            <div class="hint-feature-brand">NM<span>Group</span></div>
+            <div class="hint-feature-content">
+              <div class="hint-feature-eyebrow">UTILITY GEO GUESS · NEW FEATURE</div>
+              <h2>NEED A <em>HINT?</em></h2>
+              <p>Reveal the map through the fog.</p>
+              <div class="hint-feature-steps">
+                <div><strong>01</strong><span>Reveal a region</span></div>
+                <div><strong>02</strong><span>Narrow it down</span></div>
+                <div><strong>03</strong><span>Get closer</span></div>
+              </div>
+              <div class="hint-feature-cost">3 hints per round · +200 miles each</div>
+              <div class="hint-feature-footer">Every hint adds to your score. Lowest total wins.</div>
+            </div>`;
+        } else {
+          el.style.backgroundImage =
+            `url("screensaver/${slide.file}")`;
+        }
 
 
         container.appendChild(
