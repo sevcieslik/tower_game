@@ -247,64 +247,52 @@ function revealDraw(){
     m.closePath();m.clip();
   }
   m.fillStyle='#fff';m.fillRect(0,0,w,h);
-  // Opening expands smoothly from a small clearing to the actual hint geometry.
+  // Natural fog: the clearing is cut through the veil using a wide,
+  // feathered alpha mask. No luminous outline or polygon stroke.
+  // Keep the transition proportional to the map viewport, so it remains
+  // soft on both the satellite and dark base maps.
   const elapsed=revealAnimationStart?performance.now()-revealAnimationStart:850;
   const t=Math.min(1,Math.max(0,elapsed/850));
   const ease=1-Math.pow(1-t,3);
-  ctx.save();
-  ctx.globalCompositeOperation='destination-out';
+  const feather=Math.max(34,Math.min(88,Math.min(w,h)*.085));
+  const opening=document.createElement('canvas');
+  opening.width=mask.width;opening.height=mask.height;
+  const oc=opening.getContext('2d');
+  oc.setTransform(dpr,0,0,dpr,0,0);
+  oc.save();
+  oc.filter='blur('+feather+'px)';
+  oc.drawImage(mask,0,0,w,h);
+  oc.restore();
   if(t<1){
     const center=map.project([revealCurrent.lng,revealCurrent.lat]);
-    const radius=Math.hypot(w,h)*(0.08+1.25*ease);
-    const sweep=ctx.createRadialGradient(center.x,center.y,Math.max(0,radius-110),
-                                         center.x,center.y,radius);
+    const radius=Math.hypot(w,h)*(0.06+1.25*ease);
+    const sweep=oc.createRadialGradient(center.x,center.y,Math.max(0,radius-feather*1.5),
+                                        center.x,center.y,radius);
     sweep.addColorStop(0,'rgba(0,0,0,1)');
     sweep.addColorStop(1,'rgba(0,0,0,0)');
-    const animated=document.createElement('canvas');
-    animated.width=mask.width;animated.height=mask.height;
-    const a=animated.getContext('2d');
-    a.setTransform(dpr,0,0,dpr,0,0);
-    a.drawImage(mask,0,0,w,h);
-    a.globalCompositeOperation='destination-in';
-    a.fillStyle=sweep;a.fillRect(0,0,w,h);
-    ctx.filter='blur(24px)';
-    ctx.drawImage(animated,0,0,w,h);
-  }else{
-    ctx.filter='blur(24px)';
-    ctx.drawImage(mask,0,0,w,h);
+    oc.globalCompositeOperation='destination-in';
+    oc.fillStyle=sweep;
+    oc.fillRect(0,0,w,h);
+    oc.globalCompositeOperation='source-over';
   }
-  ctx.restore();
-  // Add a subtle daylight glow ONLY inside the opening. This keeps dark-streets
-  // legible and satellite imagery vibrant without exposing the target point.
-  const light=document.createElement('canvas');
-  light.width=mask.width;light.height=mask.height;
-  const lc=light.getContext('2d');
-  lc.setTransform(dpr,0,0,dpr,0,0);
-  lc.drawImage(mask,0,0,w,h);
-  lc.globalCompositeOperation='source-in';
-  lc.fillStyle='rgba(205,225,242,.24)';
-  lc.fillRect(0,0,w,h);
   ctx.save();
-  ctx.filter='blur(12px)';
-  ctx.drawImage(light,0,0,w,h);
+  ctx.globalCompositeOperation='destination-out';
+  ctx.drawImage(opening,0,0,w,h);
   ctx.restore();
-  // Soft luminous rim follows the TRUE intersection mask, including its
-  // irregular outline, rather than drawing any of the individual polygons.
-  const rim=document.createElement('canvas');
-  rim.width=mask.width;rim.height=mask.height;
-  const rc=rim.getContext('2d');
-  rc.setTransform(dpr,0,0,dpr,0,0);
-  rc.filter='blur(9px)';
-  rc.drawImage(mask,0,0,w,h);
-  rc.filter='none';
-  rc.globalCompositeOperation='destination-out';
-  rc.drawImage(mask,0,0,w,h);
-  rc.globalCompositeOperation='source-in';
-  rc.fillStyle='rgba(220,244,255,.82)';
-  rc.fillRect(0,0,w,h);
-  ctx.save();
-  ctx.globalAlpha=.85;
-  ctx.drawImage(rim,0,0,w,h);
-  ctx.restore();
-  // The rim is a feathered cloud edge, not a hard polygon stroke.
+  // A diffuse bank of pale mist around the clearing, rather than a rim:
+  // a larger blurred silhouette minus the inner clearing. Its very low
+  // opacity prevents a bright border or a visible polygon edge.
+  const outer=document.createElement('canvas');
+  outer.width=mask.width;outer.height=mask.height;
+  const out=outer.getContext('2d');
+  out.setTransform(dpr,0,0,dpr,0,0);
+  out.filter='blur('+(feather*1.9)+'px)';
+  out.drawImage(mask,0,0,w,h);
+  out.filter='none';
+  out.globalCompositeOperation='destination-out';
+  out.drawImage(opening,0,0,w,h);
+  out.globalCompositeOperation='source-in';
+  out.fillStyle='rgba(169,186,202,.12)';
+  out.fillRect(0,0,w,h);
+  ctx.drawImage(outer,0,0,w,h);
 }
