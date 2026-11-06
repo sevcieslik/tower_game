@@ -53,63 +53,80 @@ function revealUpdate(){
   b.textContent=revealLevel>=3?'All hints used':'Reveal map · +200 mi';
   status.textContent=revealLevel+'/3 hints · +'+(revealLevel*REVEAL_COST_MI)+' mi';
 }
-// Independent offset polygons in a local miles coordinate system.
-// The target is only a containment constraint, not the polygon centre.
-let revealRegions = null;
-function revealInside(point,polygon){
+// Geographic hints are intersections of independently generated shapes.
+// Each successive mask has a different centre and silhouette, not a smaller
+// version of the previous one. Areas are calibrated in a local miles plane.
+let revealRegions=null;
+function revealInside(point,poly){
   let inside=false;
-  for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
-    const a=polygon[i],b=polygon[j];
-    if(((a[1]>point[1])!==(b[1]>point[1])) &&
-       point[0]<(b[0]-a[0])*(point[1]-a[1])/(b[1]-a[1])+a[0])inside=!inside;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const a=poly[i],b=poly[j];
+    if((a[1]>point[1])!==(b[1]>point[1]))
+      if(point[0]<(b[0]-a[0])*(point[1]-a[1])/(b[1]-a[1])+a[0])inside=!inside;
   }
   return inside;
+}
+function revealArea(poly){
+  let sum=0;
+  for(let i=0;i<poly.length;i++){
+    const a=poly[i],b=poly[(i+1)%poly.length];
+    sum+=a[0]*b[1]-b[0]*a[1];
+  }
+  return Math.abs(sum)/2;
+}
+function revealShape(level,scale){
+  const r=revealCurrent;
+  const seed=revealHash(r.file+":intersection:"+level);
+  const angle=(seed%6283)/1000;
+  const nominal=[Math.sqrt(2500000/Math.PI),Math.sqrt(700000/Math.PI),Math.sqrt(180000/Math.PI)][level];
+  // Independent centres. The true position is offset from each geometric centre.
+  const offset=[.50,.48,.44][level]*nominal;
+  const cx=Math.cos(angle)*offset,cy=Math.sin(angle)*offset;
+  const phase=((seed>>>9)%6283)/1000,phase2=((seed>>>19)%6283)/1000;
+  return Array.from({length:96},(_,i)=>{
+    const t=i*Math.PI*2/96;
+    const variation=1+.19*Math.sin(3*t+phase)+.12*Math.cos(5*t+phase2)+.07*Math.sin(8*t+angle);
+    const distance=nominal*scale*variation;
+    return [cx+Math.cos(t)*distance,cy+Math.sin(t)*distance];
+  });
+}
+function revealIntersectionArea(polys,extent,steps){
+  // Deterministic grid integration of the *actual intersection*.
+  const min=-extent,max=extent,step=(max-min)/steps;
+  let count=0;
+  for(let iy=0;iy<steps;iy++){
+    const y=min+(iy+.5)*step;
+    for(let ix=0;ix<steps;ix++){
+      const p=[min+(ix+.5)*step,y];
+      if(polys.every(poly=>revealInside(p,poly)))count++;
+    }
+  }
+  return count*step*step;
 }
 function revealBuildRegions(){
   const r=revealCurrent;
   const latMiles=1/69;
   const lonMiles=1/(69.172*Math.max(.15,Math.cos(r.lat*Math.PI/180)));
-  const areas=[2500000,700000,180000];
+  const targets=[2500000,700000,180000];
+  const extent=1500;
+  const polys=[];
   const regions=[];
-  let parent=null;
   for(let level=0;level<3;level++){
-    const radius=Math.sqrt(areas[level]/Math.PI);
-    const seed=revealHash(r.file+":independent:"+level);
-    const direction=(seed%6283)/1000;
-    const offset=radius*(level===0?.60:level===1?.42:.35);
-    // Every level has its own centre, phase, orientation and silhouette.
-    const center=[Math.cos(direction)*offset,Math.sin(direction)*offset];
-    const orientation=((seed>>>9)%6283)/1000;
-    const p2=((seed>>>17)%6283)/1000;
-    const p3=((seed>>>23)%6283)/1000;
-    const build=scale=>Array.from({length:128},(_,i)=>{
-      const angle=2*Math.PI*i/128;
-      const distortion=1+.21*Math.sin(3*angle+p2)+.15*Math.cos(5*angle+p3)+.09*Math.sin(8*angle+orientation);
-      const d=radius*scale*distortion;
-      return [center[0]+Math.cos(angle)*d,center[1]+Math.sin(angle)*d];
-    });
-    let scale=1;
-    let polygon=build(scale);
-    // Ensure the actual location and the entire child shape are inside the parent.
-    // Shrink only when needed; the next shape is never a scaled parent contour.
-    for(let attempt=0;attempt<50;attempt++){
-      if(revealInside([0,0],polygon)&&(!parent||polygon.every(p=>revealInside(p,parent))))break;
-      scale*=.96;
-      polygon=build(scale);
+    // Binary search the independent polygon size to hit the intersection
+    // area, rather than shrinking it until it happens to fit the parent.
+    let low=.01,high=8;
+    for(let iteration=0;iteration<18;iteration++){
+      const mid=(low+high)/2;
+      const candidate=revealShape(level,mid);
+      const area=level===0?revealArea(candidate):
+        revealIntersectionArea([...polys,candidate],extent,90);
+      if(area<targets[level])low=mid;
+      else high=mid;
     }
-    // In unlikely pathological cases, centre the shape on an interior position.
-    if(!revealInside([0,0],polygon)|| (parent&&!polygon.every(p=>revealInside(p,parent)))){
-      const fallbackCenter=[0,0];
-      center[0]=fallbackCenter[0];center[1]=fallbackCenter[1];
-      scale=.65;
-      polygon=build(scale);
-      while(parent&&!polygon.every(p=>revealInside(p,parent))&&scale>.01){
-        scale*=.9;polygon=build(scale);
-      }
-    }
-    parent=polygon;
+    const polygon=revealShape(level,(low+high)/2);
+    polys.push(polygon);
     const points=polygon.map(([x,y])=>[r.lng+x*lonMiles,r.lat+y*latMiles]);
-    regions.push({points,radius,latitudeMiles:latMiles,longitudeMiles:lonMiles,centroid:[r.lng+center[0]*lonMiles,r.lat+center[1]*latMiles]});
+    regions.push({points,polys:polys.slice(),latitudeMiles:latMiles,longitudeMiles:lonMiles});
   }
   return regions;
 }
@@ -138,32 +155,42 @@ function revealDraw(){
   ctx.fillStyle='rgba(130,143,151,.35)';
   ctx.fillRect(0,0,w,h);
   const region=revealRegion();
-  const vertices=region.points.map(p=>map.project(p));
-  const centre=map.project([revealCurrent.lng,revealCurrent.lat]);
-  const east=map.project([revealCurrent.lng+region.radius*region.longitudeMiles,revealCurrent.lat]);
-  const north=map.project([revealCurrent.lng,revealCurrent.lat+region.radius*region.latitudeMiles]);
-  const pixelRadius=Math.max(1,Math.min(Math.abs(east.x-centre.x),Math.abs(north.y-centre.y)));
-  const feather=Math.max(5,Math.min(28,pixelRadius*.18));
+  // Reveal only the intersection of all purchased hint shapes.
+  // A soft mask is drawn offscreen, then blurred once at the final boundary.
+  const mask=document.createElement('canvas');
+  mask.width=revealCanvas.width;mask.height=revealCanvas.height;
+  const m=mask.getContext('2d');
+  m.setTransform(dpr,0,0,dpr,0,0);
+  m.fillStyle='#fff';
+  region.polys.forEach((poly,i)=>{
+    const projected=poly.map(([x,y])=>map.project([
+      revealCurrent.lng+x*region.longitudeMiles,
+      revealCurrent.lat+y*region.latitudeMiles
+    ]));
+    m.beginPath();
+    projected.forEach((v,j)=>j?m.lineTo(v.x,v.y):m.moveTo(v.x,v.y));
+    m.closePath();
+    if(i===0)m.clip();
+    else m.clip();
+  });
+  m.fillRect(0,0,w,h);
   ctx.save();
   ctx.globalCompositeOperation='destination-out';
-  // Blur only the clearing, not the underlying map.
-  ctx.filter='blur('+feather+'px)';
-  ctx.beginPath();
-  vertices.forEach((v,i)=>i?ctx.lineTo(v.x,v.y):ctx.moveTo(v.x,v.y));
-  ctx.closePath();
-  ctx.fillStyle='#000';
-  ctx.fill();
+  ctx.filter='blur(15px)';
+  ctx.drawImage(mask,0,0,w,h);
   ctx.restore();
-  // Subtle lime halo along the soft boundary; never draw a precise hard outline.
+  // A faint glow follows the outer contours; no target marker is drawn.
   ctx.save();
-  ctx.beginPath();
-  vertices.forEach((v,i)=>i?ctx.lineTo(v.x,v.y):ctx.moveTo(v.x,v.y));
-  ctx.closePath();
-  ctx.shadowColor='rgba(125,190,38,.72)';
-  ctx.shadowBlur=18;
-  ctx.strokeStyle='rgba(119,174,38,.34)';
+  ctx.filter='blur(10px)';
+  ctx.strokeStyle='rgba(135,195,48,.22)';
   ctx.lineWidth=3;
-  ctx.filter='blur(7px)';
-  ctx.stroke();
+  for(const poly of region.polys){
+    ctx.beginPath();
+    poly.forEach(([x,y],i)=>{
+      const p=map.project([revealCurrent.lng+x*region.longitudeMiles,revealCurrent.lat+y*region.latitudeMiles]);
+      i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);
+    });
+    ctx.closePath();ctx.stroke();
+  }
   ctx.restore();
 }
