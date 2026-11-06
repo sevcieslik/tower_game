@@ -203,7 +203,9 @@ function revealPlaySound(){
 function revealAnimate(){
   if(!revealCanvas||revealCanvas.style.display==='none')return;
   revealDraw();
-
+  if(performance.now()-revealAnimationStart<850){
+    revealAnimationFrame=requestAnimationFrame(revealAnimate);
+  }
 }
 function revealDraw(){
   if(!revealCanvas||!revealCurrent||!revealLevel||!map)return;
