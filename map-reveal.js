@@ -217,20 +217,8 @@ function revealDraw(){
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,w,h);
   // Shared midnight-blue cloud veil for both dark streets and satellite.
-  ctx.fillStyle='rgba(8,17,33,.54)';
+  ctx.fillStyle='rgba(8,17,33,.62)';
   ctx.fillRect(0,0,w,h);
-  // Broad translucent cloud banks give the fog an atmospheric texture.
-  const seed=revealHash(revealCurrent.file);
-  for(let i=0;i<8;i++){
-    const x=w*((((seed>>>((i%4)*7))+i*37)%997)/997);
-    const y=h*((((seed>>>((i%3)*9))+i*71)%991)/991);
-    const radius=Math.max(w,h)*(.17+(i%3)*.075);
-    const g=ctx.createRadialGradient(x,y,0,x,y,radius);
-    g.addColorStop(0,'rgba(120,155,186,.07)');
-    g.addColorStop(.55,'rgba(82,113,148,.035)');
-    g.addColorStop(1,'rgba(82,113,148,0)');
-    ctx.fillStyle=g;ctx.fillRect(x-radius,y-radius,radius*2,radius*2);
-  }
   // Render the opening in screen space. Mapbox globe projection can fold
   // large geographic polygons over the horizon, so canvas clipping is not
   // reliable. A radial alpha gradient works at every zoom and base style.
@@ -266,6 +254,22 @@ function revealDraw(){
   ctx.fillStyle=mist;
   ctx.beginPath();
   ctx.arc(center.x,center.y,currentRadius+feather,0,Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+  // Subtle white contour on the clearing boundary, matching the earlier
+  // dark-overlay treatment rather than the diffuse cloud effect.
+  const outlineRadius=Math.max(0,currentRadius-feather*.35);
+  const outline=ctx.createRadialGradient(center.x,center.y,
+    Math.max(0,outlineRadius-13),center.x,center.y,outlineRadius+13);
+  outline.addColorStop(0,'rgba(255,255,255,0)');
+  outline.addColorStop(.34,'rgba(255,255,255,.08)');
+  outline.addColorStop(.5,'rgba(255,255,255,.50)');
+  outline.addColorStop(.66,'rgba(255,255,255,.12)');
+  outline.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.save();
+  ctx.fillStyle=outline;
+  ctx.beginPath();
+  ctx.arc(center.x,center.y,outlineRadius+13,0,Math.PI*2);
   ctx.fill();
   ctx.restore();
   // The target must remain inside the opening. If a projected offset at a
