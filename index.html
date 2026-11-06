@@ -1287,6 +1287,11 @@ button.secondary {
 .hint-feature-cost{margin-top:3%;font-size:clamp(19px,2.4vw,36px);font-weight:800;color:#c4ec80}
 .hint-feature-footer{margin-top:1.5%;font-size:clamp(14px,1.5vw,23px);color:#bac8d4}
 
+
+#basemapSwitcher{position:absolute;top:52px;right:12px;z-index:9;display:flex;gap:3px;padding:4px;border:1px solid rgba(141,198,63,.45);border-radius:9px;background:rgba(5,12,27,.93);box-shadow:0 3px 14px rgba(0,0,0,.25)}
+#basemapSwitcher .basemap-choice{border:0;border-radius:6px;background:transparent;color:#fff;font:700 13px Arial,sans-serif;padding:9px 12px;cursor:pointer}
+#basemapSwitcher .basemap-choice.selected{background:#8dc63f;color:#081323}
+#basemapSwitcher .basemap-choice:focus-visible{outline:2px solid #fff;outline-offset:2px}
 </style>
 </head>
 
@@ -1325,6 +1330,10 @@ button.secondary {
   <div class="map-panel">
 
     <div id="map"></div>
+    <div id="basemapSwitcher" role="group" aria-label="Map background">
+      <button type="button" id="basemapLight" class="basemap-choice selected" aria-pressed="true">Map</button>
+      <button type="button" id="basemapSatellite" class="basemap-choice" aria-pressed="false">Satellite</button>
+    </div>
 
     <div
       class="overlay"
@@ -1876,6 +1885,32 @@ async function clearOfflineAssets(){
       "click",
       onMapClick
     );
+    // Switching Mapbox styles preserves map centre, zoom, markers, round and fog.
+    const basemapStyles={
+      light:"mapbox://styles/mapbox/light-v11",
+      satellite:"mapbox://styles/mapbox/satellite-streets-v12"
+    };
+    let basemapChoice="light";
+    const basemapButtons={
+      light:document.getElementById("basemapLight"),
+      satellite:document.getElementById("basemapSatellite")
+    };
+    function selectBasemap(choice){
+      if(choice===basemapChoice)return;
+      basemapChoice=choice;
+      Object.entries(basemapButtons).forEach(([name,button])=>{
+        const selected=name===choice;
+        button.classList.toggle("selected",selected);
+        button.setAttribute("aria-pressed",String(selected));
+      });
+      map.setStyle(basemapStyles[choice]);
+    }
+    basemapButtons.light.addEventListener("click",()=>selectBasemap("light"));
+    basemapButtons.satellite.addEventListener("click",()=>selectBasemap("satellite"));
+    map.on("style.load",()=>{
+      if(typeof revealDraw==="function")revealDraw();
+    });
+
 
 
     await loadAttractSlides();
