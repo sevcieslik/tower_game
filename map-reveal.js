@@ -217,7 +217,7 @@ function revealDraw(){
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,w,h);
   // Shared midnight-blue cloud veil for both dark streets and satellite.
-  ctx.fillStyle='rgba(5,12,27,.79)';
+  ctx.fillStyle='rgba(8,17,33,.54)';
   ctx.fillRect(0,0,w,h);
   // Broad translucent cloud banks give the fog an atmospheric texture.
   const seed=revealHash(revealCurrent.file);
@@ -226,8 +226,8 @@ function revealDraw(){
     const y=h*((((seed>>>((i%3)*9))+i*71)%991)/991);
     const radius=Math.max(w,h)*(.17+(i%3)*.075);
     const g=ctx.createRadialGradient(x,y,0,x,y,radius);
-    g.addColorStop(0,'rgba(120,155,186,.11)');
-    g.addColorStop(.55,'rgba(82,113,148,.055)');
+    g.addColorStop(0,'rgba(120,155,186,.07)');
+    g.addColorStop(.55,'rgba(82,113,148,.035)');
     g.addColorStop(1,'rgba(82,113,148,0)');
     ctx.fillStyle=g;ctx.fillRect(x-radius,y-radius,radius*2,radius*2);
   }
@@ -273,6 +273,20 @@ function revealDraw(){
     ctx.filter='blur(24px)';
     ctx.drawImage(mask,0,0,w,h);
   }
+  ctx.restore();
+  // Add a subtle daylight glow ONLY inside the opening. This keeps dark-streets
+  // legible and satellite imagery vibrant without exposing the target point.
+  const light=document.createElement('canvas');
+  light.width=mask.width;light.height=mask.height;
+  const lc=light.getContext('2d');
+  lc.setTransform(dpr,0,0,dpr,0,0);
+  lc.drawImage(mask,0,0,w,h);
+  lc.globalCompositeOperation='source-in';
+  lc.fillStyle='rgba(205,225,242,.24)';
+  lc.fillRect(0,0,w,h);
+  ctx.save();
+  ctx.filter='blur(12px)';
+  ctx.drawImage(light,0,0,w,h);
   ctx.restore();
   // No hard polygon strokes: the opening is a soft break in the cloud cover.
 }
