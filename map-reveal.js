@@ -288,5 +288,23 @@ function revealDraw(){
   ctx.filter='blur(12px)';
   ctx.drawImage(light,0,0,w,h);
   ctx.restore();
-  // No hard polygon strokes: the opening is a soft break in the cloud cover.
+  // Soft luminous rim follows the TRUE intersection mask, including its
+  // irregular outline, rather than drawing any of the individual polygons.
+  const rim=document.createElement('canvas');
+  rim.width=mask.width;rim.height=mask.height;
+  const rc=rim.getContext('2d');
+  rc.setTransform(dpr,0,0,dpr,0,0);
+  rc.filter='blur(9px)';
+  rc.drawImage(mask,0,0,w,h);
+  rc.filter='none';
+  rc.globalCompositeOperation='destination-out';
+  rc.drawImage(mask,0,0,w,h);
+  rc.globalCompositeOperation='source-in';
+  rc.fillStyle='rgba(220,244,255,.82)';
+  rc.fillRect(0,0,w,h);
+  ctx.save();
+  ctx.globalAlpha=.85;
+  ctx.drawImage(rim,0,0,w,h);
+  ctx.restore();
+  // The rim is a feathered cloud edge, not a hard polygon stroke.
 }
