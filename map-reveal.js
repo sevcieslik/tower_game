@@ -10,6 +10,7 @@ let revealMuted = false;
 let revealAnimationStart = 0;
 let revealAnimationFrame = 0;
 let revealAudioContext = null;
+let revealFogCache = null;
 const revealMilesToKm = miles => miles * 1.609344;
 function revealHash(s){ let h=2166136261; for(const c of s){h=Math.imul(h^c.charCodeAt(0),16777619)}return h>>>0; }
 function revealSetup(){
@@ -40,15 +41,17 @@ function revealSetup(){
   document.getElementById('revealStatus').style.cssText='background:rgba(2,6,23,.88);color:white;padding:8px 10px;border-radius:6px;font-size:13px';
   btn.addEventListener('click',revealBuy);
   revealCtx=revealCanvas.getContext('2d');
-  map.on('move',revealDraw);
-  map.on('resize',revealDraw);
-  if(window.ResizeObserver){revealResizeObserver=new ResizeObserver(revealDraw);revealResizeObserver.observe(panel);}
+  const refreshFog=()=>{revealFogCache=null;revealDraw();};
+  map.on('move',refreshFog);
+  map.on('resize',refreshFog);
+  if(window.ResizeObserver){revealResizeObserver=new ResizeObserver(refreshFog);revealResizeObserver.observe(panel);}
 }
 function revealBegin(r){
   revealSetup();
   cancelAnimationFrame(revealAnimationFrame);
   revealAnimationStart=0;
   revealCurrent=r;
+  revealFogCache=null;
   revealRegions=null;
   revealLevel=0;
   revealPenaltiesKm=0;
@@ -163,6 +166,7 @@ function revealRegion(){
 function revealBuy(){
   if(!active||!revealCurrent||revealLevel>=3)return;
   revealLevel++;
+  revealFogCache=null;
   revealPenaltiesKm+=revealMilesToKm(REVEAL_COST_MI);
   revealCanvas.style.display='block';
   revealUpdate();
@@ -207,104 +211,160 @@ function revealAnimate(){
     revealAnimationFrame=requestAnimationFrame(revealAnimate);
   }
 }
+// Construct the same geographic intersection as before. The new artwork
+// is built from the *edge of that intersection*, not separate polygon edges.
+function revealBuildFogArtwork(w,h,dpr){
+  const createLayer=()=>{
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.round(w*dpr);
+    canvas.height=Math.round(h*dpr);
+    return canvas;
+  };
+  const mask=createLayer();
+  const m=mask.getContext('2d');
+  const region=revealRegion();
+  m.setTransform(dpr,0,0,dpr,0,0);
+  for(const poly of region.polys){
+    m.beginPath();
+    poly.forEach(([x,y],i)=>{
+      const p=map.project([
+        revealCurrent.lng+x*region.longitudeMiles,
+        revealCurrent.lat+y*region.latitudeMiles
+      ]);
+      i?m.lineTo(p.x,p.y):m.moveTo(p.x,p.y);
+    });
+    m.closePath();
+    m.clip();
+  }
+  m.fillStyle='#fff';
+  m.fillRect(0,0,w,h);
+
+  // Pale glow on the *outside* of the exact opening.
+  const halo=createLayer();
+  const hc=halo.getContext('2d');
+  hc.setTransform(dpr,0,0,dpr,0,0);
+  hc.filter='blur(34px)';
+  hc.drawImage(mask,0,0,w,h);
+  hc.filter='none';
+  hc.globalCompositeOperation='destination-out';
+  hc.drawImage(mask,0,0,w,h);
+  hc.globalCompositeOperation='source-in';
+  hc.fillStyle='rgba(212,230,238,.22)';
+  hc.fillRect(0,0,w,h);
+
+  // Detect the visible outline from a small alpha map. This respects the
+  // intersection and works even when Mapbox projects parts off the screen.
+  const step=9;
+  const sw=Math.max(4,Math.ceil(w/step));
+  const sh=Math.max(4,Math.ceil(h/step));
+  const scan=document.createElement('canvas');
+  scan.width=sw;scan.height=sh;
+  const sc=scan.getContext('2d',{willReadFrequently:true});
+  sc.drawImage(mask,0,0,sw,sh);
+  const alpha=sc.getImageData(0,0,sw,sh).data;
+  const at=(x,y)=>alpha[(y*sw+x)*4+3];
+  const cloud=createLayer();
+  const cc=cloud.getContext('2d');
+  cc.setTransform(dpr,0,0,dpr,0,0);
+  for(let y=2;y<sh-2;y++){
+    for(let x=2;x<sw-2;x++){
+      if(at(x,y)<135)continue;
+      if(at(x-1,y)>160&&at(x+1,y)>160&&
+         at(x,y-1)>160&&at(x,y+1)>160)continue;
+      const seed=revealHash(revealCurrent.file+':fog:'+revealLevel+':'+x+':'+y);
+      // Scatter puffs along the actual perimeter: broad smoke underneath,
+      // smaller light wisps above. No continuous neon ring.
+      if(seed%3===0)continue;
+      const px=(x+.5)*w/sw;
+      const py=(y+.5)*h/sh;
+      const radius=20+(seed%38);
+      const density=.16+((seed>>>9)%16)/100;
+      const puff=cc.createRadialGradient(px,py,0,px,py,radius);
+      puff.addColorStop(0,'rgba(239,244,242,'+density.toFixed(2)+')');
+      puff.addColorStop(.42,'rgba(205,222,224,'+(density*.58).toFixed(2)+')');
+      puff.addColorStop(1,'rgba(177,201,210,0)');
+      cc.fillStyle=puff;
+      cc.fillRect(px-radius,py-radius,radius*2,radius*2);
+      if(seed%5===0){
+        const spread=radius*2.05;
+        const bank=cc.createRadialGradient(px,py,0,px,py,spread);
+        bank.addColorStop(0,'rgba(180,199,204,.07)');
+        bank.addColorStop(1,'rgba(180,199,204,0)');
+        cc.fillStyle=bank;
+        cc.fillRect(px-spread,py-spread,spread*2,spread*2);
+      }
+    }
+  }
+  const animated=createLayer();
+  return {mask,halo,cloud,animated};
+}
 function revealDraw(){
   if(!revealCanvas||!revealCurrent||!revealLevel||!map)return;
   const rect=revealCanvas.getBoundingClientRect(),w=rect.width,h=rect.height;
   if(!w||!h)return;
   const dpr=Math.min(window.devicePixelRatio||1,2);
-  revealCanvas.width=Math.round(w*dpr);revealCanvas.height=Math.round(h*dpr);
+  const pw=Math.round(w*dpr),ph=Math.round(h*dpr);
+  if(revealCanvas.width!==pw||revealCanvas.height!==ph){
+    revealCanvas.width=pw;
+    revealCanvas.height=ph;
+    revealFogCache=null;
+  }
   const ctx=revealCtx;
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,w,h);
-  // Shared midnight-blue cloud veil for both dark streets and satellite.
-  ctx.fillStyle='rgba(8,17,33,.54)';
+
+  // Same dimming on Map and Satellite. The terrain stays visible outside.
+  ctx.fillStyle='rgba(7,15,28,.57)';
   ctx.fillRect(0,0,w,h);
-  // Broad translucent cloud banks give the fog an atmospheric texture.
   const seed=revealHash(revealCurrent.file);
   for(let i=0;i<8;i++){
     const x=w*((((seed>>>((i%4)*7))+i*37)%997)/997);
     const y=h*((((seed>>>((i%3)*9))+i*71)%991)/991);
-    const radius=Math.max(w,h)*(.17+(i%3)*.075);
-    const g=ctx.createRadialGradient(x,y,0,x,y,radius);
-    g.addColorStop(0,'rgba(120,155,186,.07)');
-    g.addColorStop(.55,'rgba(82,113,148,.035)');
-    g.addColorStop(1,'rgba(82,113,148,0)');
-    ctx.fillStyle=g;ctx.fillRect(x-radius,y-radius,radius*2,radius*2);
+    const radius=Math.max(w,h)*(.18+(i%3)*.09);
+    const haze=ctx.createRadialGradient(x,y,0,x,y,radius);
+    haze.addColorStop(0,'rgba(158,178,190,.055)');
+    haze.addColorStop(1,'rgba(130,154,170,0)');
+    ctx.fillStyle=haze;
+    ctx.fillRect(x-radius,y-radius,radius*2,radius*2);
   }
-  const region=revealRegion();
-  // Preserve the intersection of independent polygons at all hint levels.
-  const mask=document.createElement('canvas');
-  mask.width=revealCanvas.width;mask.height=revealCanvas.height;
-  const m=mask.getContext('2d');
-  m.setTransform(dpr,0,0,dpr,0,0);
-  for(const poly of region.polys){
-    m.beginPath();
-    poly.forEach(([x,y],i)=>{
-      const p=map.project([revealCurrent.lng+x*region.longitudeMiles,
-                           revealCurrent.lat+y*region.latitudeMiles]);
-      i?m.lineTo(p.x,p.y):m.moveTo(p.x,p.y);
-    });
-    m.closePath();m.clip();
+
+  if(!revealFogCache||revealFogCache.level!==revealLevel){
+    revealFogCache={level:revealLevel,...revealBuildFogArtwork(w,h,dpr)};
   }
-  m.fillStyle='#fff';m.fillRect(0,0,w,h);
-  // Opening expands smoothly from a small clearing to the actual hint geometry.
+  const art=revealFogCache;
   const elapsed=revealAnimationStart?performance.now()-revealAnimationStart:850;
   const t=Math.min(1,Math.max(0,elapsed/850));
   const ease=1-Math.pow(1-t,3);
+
+  // Sweep the fog away over 850 ms. The underlying irregular geometry never
+  // changes; only the animation gate grows from the photographed location.
+  const ac=art.animated.getContext('2d');
+  ac.setTransform(dpr,0,0,dpr,0,0);
+  ac.clearRect(0,0,w,h);
+  ac.drawImage(art.mask,0,0,w,h);
+  if(t<1){
+    const target=map.project([revealCurrent.lng,revealCurrent.lat]);
+    const radius=Math.hypot(w,h)*(.08+1.35*ease);
+    const gradient=ac.createRadialGradient(target.x,target.y,
+      Math.max(0,radius-100),target.x,target.y,radius);
+    gradient.addColorStop(0,'rgba(0,0,0,1)');
+    gradient.addColorStop(1,'rgba(0,0,0,0)');
+    ac.globalCompositeOperation='destination-in';
+    ac.fillStyle=gradient;
+    ac.fillRect(0,0,w,h);
+    ac.globalCompositeOperation='source-over';
+  }
   ctx.save();
   ctx.globalCompositeOperation='destination-out';
-  if(t<1){
-    const center=map.project([revealCurrent.lng,revealCurrent.lat]);
-    const radius=Math.hypot(w,h)*(0.08+1.25*ease);
-    const sweep=ctx.createRadialGradient(center.x,center.y,Math.max(0,radius-110),
-                                         center.x,center.y,radius);
-    sweep.addColorStop(0,'rgba(0,0,0,1)');
-    sweep.addColorStop(1,'rgba(0,0,0,0)');
-    const animated=document.createElement('canvas');
-    animated.width=mask.width;animated.height=mask.height;
-    const a=animated.getContext('2d');
-    a.setTransform(dpr,0,0,dpr,0,0);
-    a.drawImage(mask,0,0,w,h);
-    a.globalCompositeOperation='destination-in';
-    a.fillStyle=sweep;a.fillRect(0,0,w,h);
-    ctx.filter='blur(24px)';
-    ctx.drawImage(animated,0,0,w,h);
-  }else{
-    ctx.filter='blur(24px)';
-    ctx.drawImage(mask,0,0,w,h);
-  }
+  ctx.filter='blur(17px)';
+  ctx.drawImage(art.animated,0,0,w,h);
   ctx.restore();
-  // Add a subtle daylight glow ONLY inside the opening. This keeps dark-streets
-  // legible and satellite imagery vibrant without exposing the target point.
-  const light=document.createElement('canvas');
-  light.width=mask.width;light.height=mask.height;
-  const lc=light.getContext('2d');
-  lc.setTransform(dpr,0,0,dpr,0,0);
-  lc.drawImage(mask,0,0,w,h);
-  lc.globalCompositeOperation='source-in';
-  lc.fillStyle='rgba(205,225,242,.24)';
-  lc.fillRect(0,0,w,h);
+
+  // Diffuse atmospheric edge: an outer glow plus soft uneven cloud banks
+  // hugging the actual revealed contour, not a perfect circle.
   ctx.save();
-  ctx.filter='blur(12px)';
-  ctx.drawImage(light,0,0,w,h);
+  ctx.globalAlpha=Math.min(1,.25+.75*ease);
+  ctx.drawImage(art.halo,0,0,w,h);
+  ctx.drawImage(art.cloud,0,0,w,h);
   ctx.restore();
-  // Soft luminous rim follows the TRUE intersection mask, including its
-  // irregular outline, rather than drawing any of the individual polygons.
-  const rim=document.createElement('canvas');
-  rim.width=mask.width;rim.height=mask.height;
-  const rc=rim.getContext('2d');
-  rc.setTransform(dpr,0,0,dpr,0,0);
-  rc.filter='blur(9px)';
-  rc.drawImage(mask,0,0,w,h);
-  rc.filter='none';
-  rc.globalCompositeOperation='destination-out';
-  rc.drawImage(mask,0,0,w,h);
-  rc.globalCompositeOperation='source-in';
-  rc.fillStyle='rgba(220,244,255,.82)';
-  rc.fillRect(0,0,w,h);
-  ctx.save();
-  ctx.globalAlpha=.85;
-  ctx.drawImage(rim,0,0,w,h);
-  ctx.restore();
-  // The rim is a feathered cloud edge, not a hard polygon stroke.
 }
