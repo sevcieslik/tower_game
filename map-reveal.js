@@ -6,6 +6,10 @@ let revealCtx = null;
 let revealResizeObserver = null;
 let revealCurrent = null;
 let revealPenaltiesKm = 0;
+let revealMuted = false;
+let revealAnimationStart = 0;
+let revealAnimationFrame = 0;
+let revealAudioContext = null;
 const revealMilesToKm = miles => miles * 1.609344;
 function revealHash(s){ let h=2166136261; for(const c of s){h=Math.imul(h^c.charCodeAt(0),16777619)}return h>>>0; }
 function revealSetup(){
@@ -20,6 +24,17 @@ function revealSetup(){
   controls.innerHTML='<button id="revealButton" type="button">Reveal map · +200 mi</button><span id="revealStatus">0/3 hints · +0 mi</span>';
   Object.assign(controls.style,{position:'absolute',bottom:'34px',left:'12px',zIndex:'8',display:'none',alignItems:'center',gap:'9px',flexWrap:'wrap'});
   panel.appendChild(controls);
+  const soundButton=document.createElement('button');
+  soundButton.id='revealSound';
+  soundButton.type='button';
+  soundButton.textContent='Sound: On';
+  soundButton.setAttribute('aria-label','Toggle reveal sound');
+  Object.assign(soundButton.style,{background:'rgba(2,6,23,.88)',color:'#e5e7eb',border:'1px solid rgba(141,198,63,.4)',borderRadius:'8px',padding:'10px 12px',cursor:'pointer',fontSize:'12px'});
+  controls.appendChild(soundButton);
+  soundButton.addEventListener('click',()=>{
+    revealMuted=!revealMuted;
+    soundButton.textContent=revealMuted?'Sound: Off':'Sound: On';
+  });
   const btn=document.getElementById('revealButton');
   Object.assign(btn.style,{background:'#8dc63f',color:'#091323',border:'0',borderRadius:'8px',padding:'12px 15px',fontWeight:'800',cursor:'pointer'});
   document.getElementById('revealStatus').style.cssText='background:rgba(2,6,23,.88);color:white;padding:8px 10px;border-radius:6px;font-size:13px';
@@ -31,6 +46,8 @@ function revealSetup(){
 }
 function revealBegin(r){
   revealSetup();
+  cancelAnimationFrame(revealAnimationFrame);
+  revealAnimationStart=0;
   revealCurrent=r;
   revealRegions=null;
   revealLevel=0;
@@ -40,6 +57,8 @@ function revealBegin(r){
   revealUpdate();
 }
 function revealHide(){
+  cancelAnimationFrame(revealAnimationFrame);
+  revealAnimationStart=0;
   if(revealCanvas)revealCanvas.style.display='none';
   const controls=document.getElementById('revealControls');
   if(controls)controls.style.display='none';
@@ -147,7 +166,46 @@ function revealBuy(){
   revealPenaltiesKm+=revealMilesToKm(REVEAL_COST_MI);
   revealCanvas.style.display='block';
   revealUpdate();
+  revealPlaySound();
+  revealAnimationStart=performance.now();
+  cancelAnimationFrame(revealAnimationFrame);
+  revealAnimate();
+}
+// A short, synthesized wind sweep; no audio assets or network requests.
+function revealPlaySound(){
+  if(revealMuted)return;
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)return;
+    revealAudioContext=revealAudioContext||new AC();
+    if(revealAudioContext.state==='suspended')revealAudioContext.resume();
+    const ac=revealAudioContext,now=ac.currentTime,duration=.72;
+    const buffer=ac.createBuffer(1,Math.ceil(ac.sampleRate*duration),ac.sampleRate);
+    const data=buffer.getChannelData(0);
+    let smooth=0;
+    for(let i=0;i<data.length;i++){
+      smooth=smooth*.965+(Math.random()*2-1)*.035;
+      data[i]=smooth*2.8;
+    }
+    const source=ac.createBufferSource();source.buffer=buffer;
+    const filter=ac.createBiquadFilter();filter.type='lowpass';
+    filter.frequency.setValueAtTime(380,now);
+    filter.frequency.exponentialRampToValueAtTime(1250,now+.22);
+    filter.frequency.exponentialRampToValueAtTime(270,now+duration);
+    const gain=ac.createGain();
+    gain.gain.setValueAtTime(.0001,now);
+    gain.gain.exponentialRampToValueAtTime(.13,now+.12);
+    gain.gain.exponentialRampToValueAtTime(.0001,now+duration);
+    source.connect(filter);filter.connect(gain);gain.connect(ac.destination);
+    source.start(now);source.stop(now+duration);
+  }catch(e){console.debug('Reveal audio unavailable',e);}
+}
+function revealAnimate(){
+  if(!revealCanvas||revealCanvas.style.display==='none')return;
   revealDraw();
+  if(performance.now()-revealAnimationStart<850){
+    revealAnimationFrame=requestAnimationFrame(revealAnimate);
+  }
 }
 function revealDraw(){
   if(!revealCanvas||!revealCurrent||!revealLevel||!map)return;
@@ -158,46 +216,63 @@ function revealDraw(){
   const ctx=revealCtx;
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,w,h);
-  // The rest of the map remains readable through a lighter fog.
-  ctx.fillStyle='rgba(130,143,151,.35)';
+  // Shared midnight-blue cloud veil for both dark streets and satellite.
+  ctx.fillStyle='rgba(5,12,27,.79)';
   ctx.fillRect(0,0,w,h);
+  // Broad translucent cloud banks give the fog an atmospheric texture.
+  const seed=revealHash(revealCurrent.file);
+  for(let i=0;i<8;i++){
+    const x=w*((((seed>>>((i%4)*7))+i*37)%997)/997);
+    const y=h*((((seed>>>((i%3)*9))+i*71)%991)/991);
+    const radius=Math.max(w,h)*(.17+(i%3)*.075);
+    const g=ctx.createRadialGradient(x,y,0,x,y,radius);
+    g.addColorStop(0,'rgba(120,155,186,.11)');
+    g.addColorStop(.55,'rgba(82,113,148,.055)');
+    g.addColorStop(1,'rgba(82,113,148,0)');
+    ctx.fillStyle=g;ctx.fillRect(x-radius,y-radius,radius*2,radius*2);
+  }
   const region=revealRegion();
-  // Reveal only the intersection of all purchased hint shapes.
-  // A soft mask is drawn offscreen, then blurred once at the final boundary.
+  // Preserve the intersection of independent polygons at all hint levels.
   const mask=document.createElement('canvas');
   mask.width=revealCanvas.width;mask.height=revealCanvas.height;
   const m=mask.getContext('2d');
   m.setTransform(dpr,0,0,dpr,0,0);
-  m.fillStyle='#fff';
-  region.polys.forEach((poly,i)=>{
-    const projected=poly.map(([x,y])=>map.project([
-      revealCurrent.lng+x*region.longitudeMiles,
-      revealCurrent.lat+y*region.latitudeMiles
-    ]));
+  for(const poly of region.polys){
     m.beginPath();
-    projected.forEach((v,j)=>j?m.lineTo(v.x,v.y):m.moveTo(v.x,v.y));
-    m.closePath();
-    if(i===0)m.clip();
-    else m.clip();
-  });
-  m.fillRect(0,0,w,h);
+    poly.forEach(([x,y],i)=>{
+      const p=map.project([revealCurrent.lng+x*region.longitudeMiles,
+                           revealCurrent.lat+y*region.latitudeMiles]);
+      i?m.lineTo(p.x,p.y):m.moveTo(p.x,p.y);
+    });
+    m.closePath();m.clip();
+  }
+  m.fillStyle='#fff';m.fillRect(0,0,w,h);
+  // Opening expands smoothly from a small clearing to the actual hint geometry.
+  const elapsed=revealAnimationStart?performance.now()-revealAnimationStart:850;
+  const t=Math.min(1,Math.max(0,elapsed/850));
+  const ease=1-Math.pow(1-t,3);
   ctx.save();
   ctx.globalCompositeOperation='destination-out';
-  ctx.filter='blur(15px)';
-  ctx.drawImage(mask,0,0,w,h);
-  ctx.restore();
-  // A faint glow follows the outer contours; no target marker is drawn.
-  ctx.save();
-  ctx.filter='blur(10px)';
-  ctx.strokeStyle='rgba(135,195,48,.22)';
-  ctx.lineWidth=3;
-  for(const poly of region.polys){
-    ctx.beginPath();
-    poly.forEach(([x,y],i)=>{
-      const p=map.project([revealCurrent.lng+x*region.longitudeMiles,revealCurrent.lat+y*region.latitudeMiles]);
-      i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);
-    });
-    ctx.closePath();ctx.stroke();
+  if(t<1){
+    const center=map.project([revealCurrent.lng,revealCurrent.lat]);
+    const radius=Math.hypot(w,h)*(0.08+1.25*ease);
+    const sweep=ctx.createRadialGradient(center.x,center.y,Math.max(0,radius-110),
+                                         center.x,center.y,radius);
+    sweep.addColorStop(0,'rgba(0,0,0,1)');
+    sweep.addColorStop(1,'rgba(0,0,0,0)');
+    const animated=document.createElement('canvas');
+    animated.width=mask.width;animated.height=mask.height;
+    const a=animated.getContext('2d');
+    a.setTransform(dpr,0,0,dpr,0,0);
+    a.drawImage(mask,0,0,w,h);
+    a.globalCompositeOperation='destination-in';
+    a.fillStyle=sweep;a.fillRect(0,0,w,h);
+    ctx.filter='blur(24px)';
+    ctx.drawImage(animated,0,0,w,h);
+  }else{
+    ctx.filter='blur(24px)';
+    ctx.drawImage(mask,0,0,w,h);
   }
   ctx.restore();
+  // No hard polygon strokes: the opening is a soft break in the cloud cover.
 }
