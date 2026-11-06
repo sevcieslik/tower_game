@@ -217,74 +217,94 @@ function revealDraw(){
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,w,h);
   // Shared midnight-blue cloud veil for both dark streets and satellite.
-  ctx.fillStyle='rgba(8,17,33,.62)';
+  ctx.fillStyle='rgba(8,17,33,.54)';
   ctx.fillRect(0,0,w,h);
-  // Render the opening in screen space. Mapbox globe projection can fold
-  // large geographic polygons over the horizon, so canvas clipping is not
-  // reliable. A radial alpha gradient works at every zoom and base style.
-  const target=map.project([revealCurrent.lng,revealCurrent.lat]);
-  const level=revealLevel-1;
-  const radiiMiles=[Math.sqrt(2500000/Math.PI),Math.sqrt(700000/Math.PI),Math.sqrt(180000/Math.PI)];
-  const angle=(revealHash(revealCurrent.file+':bearing')%6283)/1000+level*2.399963229728653;
-  const offset=[.50,.48,.44][level]*radiiMiles[level];
-  const latMiles=1/69;
-  const lonMiles=1/(69.172*Math.max(.15,Math.cos(revealCurrent.lat*Math.PI/180)));
-  const centerLng=revealCurrent.lng+Math.cos(angle)*offset*lonMiles;
-  const centerLat=Math.max(-85,Math.min(85,revealCurrent.lat+Math.sin(angle)*offset*latMiles));
-  const center=map.project([centerLng,centerLat]);
-  const east=map.project([centerLng+radiiMiles[level]*lonMiles,centerLat]);
-  const north=map.project([centerLng,Math.max(-85,Math.min(85,centerLat+radiiMiles[level]*latMiles))]);
-  const projectedRadius=Math.max(Math.hypot(east.x-center.x,east.y-center.y),Math.hypot(north.x-center.x,north.y-center.y));
-  // Ensure a hint remains visible even at globe overview zoom.
-  const radius=Math.max([Math.min(w,h)*.28,Math.min(w,h)*.18,Math.min(w,h)*.11][level],
-                        Math.min(Math.max(w,h)*.85,projectedRadius));
+  // Broad translucent cloud banks give the fog an atmospheric texture.
+  const seed=revealHash(revealCurrent.file);
+  for(let i=0;i<8;i++){
+    const x=w*((((seed>>>((i%4)*7))+i*37)%997)/997);
+    const y=h*((((seed>>>((i%3)*9))+i*71)%991)/991);
+    const radius=Math.max(w,h)*(.17+(i%3)*.075);
+    const g=ctx.createRadialGradient(x,y,0,x,y,radius);
+    g.addColorStop(0,'rgba(120,155,186,.07)');
+    g.addColorStop(.55,'rgba(82,113,148,.035)');
+    g.addColorStop(1,'rgba(82,113,148,0)');
+    ctx.fillStyle=g;ctx.fillRect(x-radius,y-radius,radius*2,radius*2);
+  }
+  const region=revealRegion();
+  // Preserve the intersection of independent polygons at all hint levels.
+  const mask=document.createElement('canvas');
+  mask.width=revealCanvas.width;mask.height=revealCanvas.height;
+  const m=mask.getContext('2d');
+  m.setTransform(dpr,0,0,dpr,0,0);
+  for(const poly of region.polys){
+    m.beginPath();
+    poly.forEach(([x,y],i)=>{
+      const p=map.project([revealCurrent.lng+x*region.longitudeMiles,
+                           revealCurrent.lat+y*region.latitudeMiles]);
+      i?m.lineTo(p.x,p.y):m.moveTo(p.x,p.y);
+    });
+    m.closePath();m.clip();
+  }
+  m.fillStyle='#fff';m.fillRect(0,0,w,h);
+  // Opening expands smoothly from a small clearing to the actual hint geometry.
   const elapsed=revealAnimationStart?performance.now()-revealAnimationStart:850;
   const t=Math.min(1,Math.max(0,elapsed/850));
   const ease=1-Math.pow(1-t,3);
-  const currentRadius=radius*(.12+.88*ease);
-  const feather=Math.max(22,Math.min(75,radius*.19));
-  const mist=ctx.createRadialGradient(center.x,center.y,
-    Math.max(0,currentRadius-feather*1.5),center.x,center.y,currentRadius+feather);
-  mist.addColorStop(0,'rgba(0,0,0,1)');
-  mist.addColorStop(.70,'rgba(0,0,0,.98)');
-  mist.addColorStop(.89,'rgba(0,0,0,.55)');
-  mist.addColorStop(1,'rgba(0,0,0,0)');
   ctx.save();
   ctx.globalCompositeOperation='destination-out';
-  ctx.fillStyle=mist;
-  ctx.beginPath();
-  ctx.arc(center.x,center.y,currentRadius+feather,0,Math.PI*2);
-  ctx.fill();
-  ctx.restore();
-  // Subtle white contour on the clearing boundary, matching the earlier
-  // dark-overlay treatment rather than the diffuse cloud effect.
-  const outlineRadius=Math.max(0,currentRadius-feather*.35);
-  const outline=ctx.createRadialGradient(center.x,center.y,
-    Math.max(0,outlineRadius-13),center.x,center.y,outlineRadius+13);
-  outline.addColorStop(0,'rgba(255,255,255,0)');
-  outline.addColorStop(.34,'rgba(255,255,255,.08)');
-  outline.addColorStop(.5,'rgba(255,255,255,.50)');
-  outline.addColorStop(.66,'rgba(255,255,255,.12)');
-  outline.addColorStop(1,'rgba(255,255,255,0)');
-  ctx.save();
-  ctx.fillStyle=outline;
-  ctx.beginPath();
-  ctx.arc(center.x,center.y,outlineRadius+13,0,Math.PI*2);
-  ctx.fill();
-  ctx.restore();
-  // The target must remain inside the opening. If a projected offset at a
-  // globe edge is distorted, add a soft connected clearing over the target.
-  const separation=Math.hypot(target.x-center.x,target.y-center.y);
-  if(Number.isFinite(separation)&&separation>radius*.75){
-    const bridge=ctx.createRadialGradient(target.x,target.y,0,target.x,target.y,
-      Math.max(55,Math.min(radius*.65,separation*.65)));
-    bridge.addColorStop(0,'rgba(0,0,0,.98)');
-    bridge.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.save();
-    ctx.globalCompositeOperation='destination-out';
-    ctx.fillStyle=bridge;
-    ctx.fillRect(0,0,w,h);
-    ctx.restore();
+  if(t<1){
+    const center=map.project([revealCurrent.lng,revealCurrent.lat]);
+    const radius=Math.hypot(w,h)*(0.08+1.25*ease);
+    const sweep=ctx.createRadialGradient(center.x,center.y,Math.max(0,radius-110),
+                                         center.x,center.y,radius);
+    sweep.addColorStop(0,'rgba(0,0,0,1)');
+    sweep.addColorStop(1,'rgba(0,0,0,0)');
+    const animated=document.createElement('canvas');
+    animated.width=mask.width;animated.height=mask.height;
+    const a=animated.getContext('2d');
+    a.setTransform(dpr,0,0,dpr,0,0);
+    a.drawImage(mask,0,0,w,h);
+    a.globalCompositeOperation='destination-in';
+    a.fillStyle=sweep;a.fillRect(0,0,w,h);
+    ctx.filter='blur(24px)';
+    ctx.drawImage(animated,0,0,w,h);
+  }else{
+    ctx.filter='blur(24px)';
+    ctx.drawImage(mask,0,0,w,h);
   }
-
+  ctx.restore();
+  // Add a subtle daylight glow ONLY inside the opening. This keeps dark-streets
+  // legible and satellite imagery vibrant without exposing the target point.
+  const light=document.createElement('canvas');
+  light.width=mask.width;light.height=mask.height;
+  const lc=light.getContext('2d');
+  lc.setTransform(dpr,0,0,dpr,0,0);
+  lc.drawImage(mask,0,0,w,h);
+  lc.globalCompositeOperation='source-in';
+  lc.fillStyle='rgba(205,225,242,.24)';
+  lc.fillRect(0,0,w,h);
+  ctx.save();
+  ctx.filter='blur(12px)';
+  ctx.drawImage(light,0,0,w,h);
+  ctx.restore();
+  // Soft luminous rim follows the TRUE intersection mask, including its
+  // irregular outline, rather than drawing any of the individual polygons.
+  const rim=document.createElement('canvas');
+  rim.width=mask.width;rim.height=mask.height;
+  const rc=rim.getContext('2d');
+  rc.setTransform(dpr,0,0,dpr,0,0);
+  rc.filter='blur(9px)';
+  rc.drawImage(mask,0,0,w,h);
+  rc.filter='none';
+  rc.globalCompositeOperation='destination-out';
+  rc.drawImage(mask,0,0,w,h);
+  rc.globalCompositeOperation='source-in';
+  rc.fillStyle='rgba(220,244,255,.82)';
+  rc.fillRect(0,0,w,h);
+  ctx.save();
+  ctx.globalAlpha=.85;
+  ctx.drawImage(rim,0,0,w,h);
+  ctx.restore();
+  // The rim is a feathered cloud edge, not a hard polygon stroke.
 }
