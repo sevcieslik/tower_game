@@ -203,9 +203,7 @@ function revealPlaySound(){
 function revealAnimate(){
   if(!revealCanvas||revealCanvas.style.display==='none')return;
   revealDraw();
-  if(performance.now()-revealAnimationStart<850){
-    revealAnimationFrame=requestAnimationFrame(revealAnimate);
-  }
+
 }
 function revealDraw(){
   if(!revealCanvas||!revealCurrent||!revealLevel||!map)return;
@@ -231,98 +229,56 @@ function revealDraw(){
     g.addColorStop(1,'rgba(82,113,148,0)');
     ctx.fillStyle=g;ctx.fillRect(x-radius,y-radius,radius*2,radius*2);
   }
-  const region=revealRegion();
-  // Preserve the intersection of independent polygons at all hint levels.
-  const mask=document.createElement('canvas');
-  mask.width=revealCanvas.width;mask.height=revealCanvas.height;
-  const m=mask.getContext('2d');
-  m.setTransform(dpr,0,0,dpr,0,0);
-  for(const poly of region.polys){
-    m.beginPath();
-    poly.forEach(([x,y],i)=>{
-      const p=map.project([revealCurrent.lng+x*region.longitudeMiles,
-                           revealCurrent.lat+y*region.latitudeMiles]);
-      i?m.lineTo(p.x,p.y):m.moveTo(p.x,p.y);
-    });
-    m.closePath();m.clip();
-  }
-  m.fillStyle='#fff';m.fillRect(0,0,w,h);
-  // Globe projection can clip large geographic polygons into an empty
-  // intersection. Never let a purchased hint reveal nothing.
-  const alpha=m.getImageData(0,0,mask.width,mask.height).data;
-  let visible=0;
-  for(let y=0;y<mask.height;y+=Math.max(1,Math.floor(mask.height/32))){
-    for(let x=0;x<mask.width;x+=Math.max(1,Math.floor(mask.width/32))){
-      if(alpha[(y*mask.width+x)*4+3]>24)visible++;
-    }
-  }
-  if(visible<4){
-    m.resetTransform();
-    m.clearRect(0,0,mask.width,mask.height);
-    m.setTransform(dpr,0,0,dpr,0,0);
-    const p=map.project([revealCurrent.lng,revealCurrent.lat]);
-    const fraction=[.36,.23,.13][revealLevel-1];
-    const radius=Math.min(w,h)*fraction;
-    const seed2=revealHash(revealCurrent.file+':fallback:'+revealLevel);
-    const rotation=(seed2%6283)/1000;
-    m.beginPath();
-    for(let j=0;j<=96;j++){
-      const a=j*Math.PI*2/96;
-      const variation=1+.11*Math.sin(3*a+rotation)+.07*Math.cos(5*a+rotation*1.7);
-      const px=p.x+Math.cos(a)*radius*variation;
-      const py=p.y+Math.sin(a)*radius*variation;
-      if(j===0)m.moveTo(px,py);else m.lineTo(px,py);
-    }
-    m.closePath();
-    m.fillStyle='#fff';m.fill();
-    console.warn('Reveal fog: used projected fallback for globe clipping');
-  }
-  // Natural fog: the clearing is cut through the veil using a wide,
-  // feathered alpha mask. No luminous outline or polygon stroke.
-  // Keep the transition proportional to the map viewport, so it remains
-  // soft on both the satellite and dark base maps.
+  // Render the opening in screen space. Mapbox globe projection can fold
+  // large geographic polygons over the horizon, so canvas clipping is not
+  // reliable. A radial alpha gradient works at every zoom and base style.
+  const target=map.project([revealCurrent.lng,revealCurrent.lat]);
+  const level=revealLevel-1;
+  const radiiMiles=[Math.sqrt(2500000/Math.PI),Math.sqrt(700000/Math.PI),Math.sqrt(180000/Math.PI)];
+  const angle=(revealHash(revealCurrent.file+':bearing')%6283)/1000+level*2.399963229728653;
+  const offset=[.50,.48,.44][level]*radiiMiles[level];
+  const latMiles=1/69;
+  const lonMiles=1/(69.172*Math.max(.15,Math.cos(revealCurrent.lat*Math.PI/180)));
+  const centerLng=revealCurrent.lng+Math.cos(angle)*offset*lonMiles;
+  const centerLat=Math.max(-85,Math.min(85,revealCurrent.lat+Math.sin(angle)*offset*latMiles));
+  const center=map.project([centerLng,centerLat]);
+  const east=map.project([centerLng+radiiMiles[level]*lonMiles,centerLat]);
+  const north=map.project([centerLng,Math.max(-85,Math.min(85,centerLat+radiiMiles[level]*latMiles))]);
+  const projectedRadius=Math.max(Math.hypot(east.x-center.x,east.y-center.y),Math.hypot(north.x-center.x,north.y-center.y));
+  // Ensure a hint remains visible even at globe overview zoom.
+  const radius=Math.max([Math.min(w,h)*.28,Math.min(w,h)*.18,Math.min(w,h)*.11][level],
+                        Math.min(Math.max(w,h)*.85,projectedRadius));
   const elapsed=revealAnimationStart?performance.now()-revealAnimationStart:850;
   const t=Math.min(1,Math.max(0,elapsed/850));
   const ease=1-Math.pow(1-t,3);
-  const feather=Math.max(34,Math.min(88,Math.min(w,h)*.085));
-  const opening=document.createElement('canvas');
-  opening.width=mask.width;opening.height=mask.height;
-  const oc=opening.getContext('2d');
-  oc.setTransform(dpr,0,0,dpr,0,0);
-  oc.save();
-  oc.filter='blur('+feather+'px)';
-  oc.drawImage(mask,0,0,w,h);
-  oc.restore();
-  if(t<1){
-    const center=map.project([revealCurrent.lng,revealCurrent.lat]);
-    const radius=Math.hypot(w,h)*(0.06+1.25*ease);
-    const sweep=oc.createRadialGradient(center.x,center.y,Math.max(0,radius-feather*1.5),
-                                        center.x,center.y,radius);
-    sweep.addColorStop(0,'rgba(0,0,0,1)');
-    sweep.addColorStop(1,'rgba(0,0,0,0)');
-    oc.globalCompositeOperation='destination-in';
-    oc.fillStyle=sweep;
-    oc.fillRect(0,0,w,h);
-    oc.globalCompositeOperation='source-over';
-  }
+  const currentRadius=radius*(.12+.88*ease);
+  const feather=Math.max(22,Math.min(75,radius*.19));
+  const mist=ctx.createRadialGradient(center.x,center.y,
+    Math.max(0,currentRadius-feather*1.5),center.x,center.y,currentRadius+feather);
+  mist.addColorStop(0,'rgba(0,0,0,1)');
+  mist.addColorStop(.70,'rgba(0,0,0,.98)');
+  mist.addColorStop(.89,'rgba(0,0,0,.55)');
+  mist.addColorStop(1,'rgba(0,0,0,0)');
   ctx.save();
   ctx.globalCompositeOperation='destination-out';
-  ctx.drawImage(opening,0,0,w,h);
+  ctx.fillStyle=mist;
+  ctx.beginPath();
+  ctx.arc(center.x,center.y,currentRadius+feather,0,Math.PI*2);
+  ctx.fill();
   ctx.restore();
-  // A diffuse bank of pale mist around the clearing, rather than a rim:
-  // a larger blurred silhouette minus the inner clearing. Its very low
-  // opacity prevents a bright border or a visible polygon edge.
-  const outer=document.createElement('canvas');
-  outer.width=mask.width;outer.height=mask.height;
-  const out=outer.getContext('2d');
-  out.setTransform(dpr,0,0,dpr,0,0);
-  out.filter='blur('+(feather*1.9)+'px)';
-  out.drawImage(mask,0,0,w,h);
-  out.filter='none';
-  out.globalCompositeOperation='destination-out';
-  out.drawImage(opening,0,0,w,h);
-  out.globalCompositeOperation='source-in';
-  out.fillStyle='rgba(169,186,202,.12)';
-  out.fillRect(0,0,w,h);
-  ctx.drawImage(outer,0,0,w,h);
+  // The target must remain inside the opening. If a projected offset at a
+  // globe edge is distorted, add a soft connected clearing over the target.
+  const separation=Math.hypot(target.x-center.x,target.y-center.y);
+  if(Number.isFinite(separation)&&separation>radius*.75){
+    const bridge=ctx.createRadialGradient(target.x,target.y,0,target.x,target.y,
+      Math.max(55,Math.min(radius*.65,separation*.65)));
+    bridge.addColorStop(0,'rgba(0,0,0,.98)');
+    bridge.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.save();
+    ctx.globalCompositeOperation='destination-out';
+    ctx.fillStyle=bridge;
+    ctx.fillRect(0,0,w,h);
+    ctx.restore();
+  }
+
 }
