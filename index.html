@@ -1269,6 +1269,29 @@ button.secondary {
     width:min(440px,calc(100vw - 32px));
   }
 }
+ .reveal-attract-note{position:absolute;bottom:68px;left:50%;transform:translateX(-50%);z-index:20;background:rgba(2,9,23,.88);border:1px solid rgba(141,198,63,.65);color:#d9f6a2;padding:12px 24px;border-radius:12px;text-align:center;font:700 clamp(13px,1.5vw,24px) Arial,sans-serif;letter-spacing:.03em;pointer-events:none;max-width:90%;box-sizing:border-box}\n 
+/* Dedicated attract-mode feature slide, not an overlay on existing artwork. */
+.hint-feature-slide{background:radial-gradient(ellipse at 78% 46%,rgba(140,198,63,.17),transparent 37%),linear-gradient(125deg,#051426,#0b2030 60%,#06101e);color:#fff;font-family:Arial,sans-serif;overflow:hidden}
+.hint-feature-slide::before{content:"";position:absolute;right:-12%;top:-22%;width:72%;height:140%;background:repeating-radial-gradient(ellipse at 50% 50%,transparent 0 35px,rgba(141,198,63,.13) 36px 37px,transparent 38px 73px);transform:rotate(-21deg);opacity:.75}
+.hint-feature-brand{position:absolute;top:5%;left:5%;font-size:clamp(30px,4vw,64px);font-weight:700;color:#8dc63f;letter-spacing:-.06em}
+.hint-feature-brand span{font-size:.47em;letter-spacing:-.03em;font-weight:400}
+.hint-feature-content{position:absolute;left:6%;top:23%;right:6%;z-index:1}
+.hint-feature-eyebrow{color:#c1e781;letter-spacing:.25em;font-size:clamp(12px,1.3vw,20px);font-weight:700}
+.hint-feature-content h2{font-size:clamp(52px,8vw,136px);line-height:1;margin:2.8% 0 1%;font-weight:900;letter-spacing:-.055em}
+.hint-feature-content h2 em{font-style:normal;color:#8dc63f}
+.hint-feature-content p{font-size:clamp(22px,2.4vw,38px);color:#e4ebf3;margin:0 0 4%}
+.hint-feature-steps{display:flex;gap:2%;width:min(100%,1100px)}
+.hint-feature-steps div{flex:1;border:1px solid rgba(141,198,63,.48);background:rgba(8,21,38,.8);border-radius:12px;padding:2%}
+.hint-feature-steps strong{display:block;font-size:clamp(24px,3vw,50px);color:#8dc63f;margin-bottom:8px}
+.hint-feature-steps span{font-size:clamp(14px,1.7vw,25px);font-weight:700}
+.hint-feature-cost{margin-top:3%;font-size:clamp(19px,2.4vw,36px);font-weight:800;color:#c4ec80}
+.hint-feature-footer{margin-top:1.5%;font-size:clamp(14px,1.5vw,23px);color:#bac8d4}
+
+
+#basemapSwitcher{position:absolute;top:52px;right:12px;z-index:9;display:flex;gap:3px;padding:4px;border:1px solid rgba(141,198,63,.45);border-radius:9px;background:rgba(5,12,27,.93);box-shadow:0 3px 14px rgba(0,0,0,.25)}
+#basemapSwitcher .basemap-choice{border:0;border-radius:6px;background:transparent;color:#fff;font:700 13px Arial,sans-serif;padding:9px 12px;cursor:pointer}
+#basemapSwitcher .basemap-choice.selected{background:#8dc63f;color:#081323}
+#basemapSwitcher .basemap-choice:focus-visible{outline:2px solid #fff;outline-offset:2px}
 </style>
 </head>
 
@@ -1307,6 +1330,10 @@ button.secondary {
   <div class="map-panel">
 
     <div id="map"></div>
+    <div id="basemapSwitcher" role="group" aria-label="Map background">
+      <button type="button" id="basemapLight" class="basemap-choice selected" aria-pressed="true">Map</button>
+      <button type="button" id="basemapSatellite" class="basemap-choice" aria-pressed="false">Satellite</button>
+    </div>
 
     <div
       class="overlay"
@@ -1378,14 +1405,14 @@ button.secondary {
       <div class="rule-item">
         <div class="rule-icon">03</div>
         <div class="rule-text">
-          Your score is your total distance from the correct locations
+          Your score is distance plus any hint penalties
         </div>
       </div>
 
       <div class="rule-item">
         <div class="rule-icon">04</div>
         <div class="rule-text">
-          Lowest total distance wins
+          Reveal up to 3 fog hints per round, +200 miles each. Lowest total wins
         </div>
       </div>
 
@@ -1440,6 +1467,7 @@ button.secondary {
 >
 
   <div id="attractSlides"></div>
+  
 
   <div
     class="attract-fallback"
@@ -1857,6 +1885,32 @@ async function clearOfflineAssets(){
       "click",
       onMapClick
     );
+    // Switching Mapbox styles preserves map centre, zoom, markers, round and fog.
+    const basemapStyles={
+      light:"mapbox://styles/mapbox/dark-v11",
+      satellite:"mapbox://styles/mapbox/satellite-streets-v12"
+    };
+    let basemapChoice="light";
+    const basemapButtons={
+      light:document.getElementById("basemapLight"),
+      satellite:document.getElementById("basemapSatellite")
+    };
+    function selectBasemap(choice){
+      if(choice===basemapChoice)return;
+      basemapChoice=choice;
+      Object.entries(basemapButtons).forEach(([name,button])=>{
+        const selected=name===choice;
+        button.classList.toggle("selected",selected);
+        button.setAttribute("aria-pressed",String(selected));
+      });
+      map.setStyle(basemapStyles[choice]);
+    }
+    basemapButtons.light.addEventListener("click",()=>selectBasemap("light"));
+    basemapButtons.satellite.addEventListener("click",()=>selectBasemap("satellite"));
+    map.on("style.load",()=>{
+      if(typeof revealDraw==="function")revealDraw();
+    });
+
 
 
     await loadAttractSlides();
@@ -2115,6 +2169,7 @@ function resetGame(){
 
 
   removeVisuals();
+  revealHide();
 
   resetImageView();
 
@@ -2319,6 +2374,8 @@ function showRound(){
   }
 
 
+  revealBegin(current);
+
   document
     .getElementById("roundTitle")
     .innerText =
@@ -2362,6 +2419,7 @@ function showRound(){
     img.onload = null;
 
     active = true;
+    revealUpdate();
 
     currentMode =
       "playing";
@@ -2729,7 +2787,7 @@ function startTimer(){
         // A missed round gets the maximum possible distance,
         // so timing out can never be better than making a guess.
         total +=
-          TIMEOUT_PENALTY_KM;
+          TIMEOUT_PENALTY_KM + revealPenaltiesKm;
 
         addRoundResult(
           TIMEOUT_PENALTY_KM,
@@ -2793,7 +2851,7 @@ function onMapClick(e){
     );
 
 
-  total += d;
+  total += d + revealPenaltiesKm;
 
   addRoundResult(
     d,
@@ -2884,6 +2942,9 @@ function addRoundResult(
 
   roundResults.push({
     round:round + 1,
+    hints:revealLevel,
+    hintPenaltyKm:revealPenaltiesKm,
+    scoredDistance: Number.isFinite(distanceKm) ? distanceKm + revealPenaltiesKm : null,
     distance:
       Number.isFinite(distanceKm)
       ? distanceKm
@@ -2917,9 +2978,10 @@ function renderRoundHistory(){
               ${
                 item.distance === null
                 ? "—"
-                : kmToMiles(item.distance).toFixed(1) + " mi"
+                : kmToMiles(item.scoredDistance).toFixed(1) + " mi"
               }
             </div>
+            <div class="round-hint-penalty" style="font-size:12px;color:#b7cf80">${item.hints ? item.hints + " hint(s) · +" + (item.hints*200) + " mi" : "No hints"}</div>
             <div
               class="round-history-comment"
               title="${escapeHtml(item.comment)}"
@@ -2945,6 +3007,7 @@ function showRoundPopup(
 ){
 
   hideCountdown();
+  revealHide();
 
   currentMode =
     "roundResult";
@@ -2998,6 +3061,7 @@ function showRoundPopup(
         }
       </div>
 
+      <div style="font-size:15px;color:#c5e84b;margin:8px 0">Hints: ${revealLevel}/3 · Penalty: +${revealLevel*200} mi · Round score: ${d === null ? "—" : (kmToMiles(d)+revealLevel*200).toFixed(1)+" mi"}</div>
       <div class="round-total">
         ${
           status === "timeout"
@@ -5975,6 +6039,6 @@ function csvCell(value){
 }
 
 </script>
-
+<script src="map-reveal.js"></script>
 </body>
 </html>
