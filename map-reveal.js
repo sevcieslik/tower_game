@@ -77,12 +77,16 @@ function revealArea(poly){
 function revealShape(level,scale){
   const r=revealCurrent;
   const seed=revealHash(r.file+":intersection:"+level);
-  // Rotate successive centres by the golden angle; adjacent FNV hashes alone\n  // produced almost identical directions for levels 0, 1 and 2.\n  const baseAngle=(revealHash(r.file+":bearing")%6283)/1000;\n  const angle=baseAngle+level*2.399963229728653;
+  // Rotate successive centres by the golden angle; adjacent FNV hashes alone
+  // produced almost identical directions for levels 0, 1 and 2.
+  const baseAngle=(revealHash(r.file+":bearing")%6283)/1000;
+  const angle=baseAngle+level*2.399963229728653;
   const nominal=[Math.sqrt(2500000/Math.PI),Math.sqrt(700000/Math.PI),Math.sqrt(180000/Math.PI)][level];
   // Independent centres. The true position is offset from each geometric centre.
   const offset=[.50,.48,.44][level]*nominal;
   const cx=Math.cos(angle)*offset,cy=Math.sin(angle)*offset;
-  const phase=((revealHash(r.file+":phase:"+level)%6283)/1000)+level*1.7;\n  const phase2=((revealHash(r.file+":phase2:"+level)%6283)/1000)+level*2.1;
+  const phase=((revealHash(r.file+":phase:"+level)%6283)/1000)+level*1.7;
+  const phase2=((revealHash(r.file+":phase2:"+level)%6283)/1000)+level*2.1;
   return Array.from({length:96},(_,i)=>{
     const t=i*Math.PI*2/96;
     const variation=1+.19*Math.sin(3*t+phase)+.12*Math.cos(5*t+phase2)+.07*Math.sin(8*t+angle);
@@ -123,7 +127,10 @@ function revealBuildRegions(){
       if(area<targets[level])low=mid;
       else high=mid;
     }
-    const polygon=revealShape(level,(low+high)/2);\n    const measured=level===0?revealArea(polygon):revealIntersectionArea([...polys,polygon],extent,180);\n    console.debug("Map reveal level",level+1,"area sq mi",Math.round(measured),"target",targets[level],\n      "contains target",revealInside([0,0],polygon));
+    const polygon=revealShape(level,(low+high)/2);
+    const measured=level===0?revealArea(polygon):revealIntersectionArea([...polys,polygon],extent,180);
+    console.debug("Map reveal level",level+1,"area sq mi",Math.round(measured),"target",targets[level],
+      "contains target",revealInside([0,0],polygon));
     polys.push(polygon);
     const points=polygon.map(([x,y])=>[r.lng+x*lonMiles,r.lat+y*latMiles]);
     regions.push({points,polys:polys.slice(),latitudeMiles:latMiles,longitudeMiles:lonMiles});
