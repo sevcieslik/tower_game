@@ -247,6 +247,36 @@ function revealDraw(){
     m.closePath();m.clip();
   }
   m.fillStyle='#fff';m.fillRect(0,0,w,h);
+  // Globe projection can clip large geographic polygons into an empty
+  // intersection. Never let a purchased hint reveal nothing.
+  const alpha=m.getImageData(0,0,mask.width,mask.height).data;
+  let visible=0;
+  for(let y=0;y<mask.height;y+=Math.max(1,Math.floor(mask.height/32))){
+    for(let x=0;x<mask.width;x+=Math.max(1,Math.floor(mask.width/32))){
+      if(alpha[(y*mask.width+x)*4+3]>24)visible++;
+    }
+  }
+  if(visible<4){
+    m.resetTransform();
+    m.clearRect(0,0,mask.width,mask.height);
+    m.setTransform(dpr,0,0,dpr,0,0);
+    const p=map.project([revealCurrent.lng,revealCurrent.lat]);
+    const fraction=[.36,.23,.13][revealLevel-1];
+    const radius=Math.min(w,h)*fraction;
+    const seed2=revealHash(revealCurrent.file+':fallback:'+revealLevel);
+    const rotation=(seed2%6283)/1000;
+    m.beginPath();
+    for(let j=0;j<=96;j++){
+      const a=j*Math.PI*2/96;
+      const variation=1+.11*Math.sin(3*a+rotation)+.07*Math.cos(5*a+rotation*1.7);
+      const px=p.x+Math.cos(a)*radius*variation;
+      const py=p.y+Math.sin(a)*radius*variation;
+      if(j===0)m.moveTo(px,py);else m.lineTo(px,py);
+    }
+    m.closePath();
+    m.fillStyle='#fff';m.fill();
+    console.warn('Reveal fog: used projected fallback for globe clipping');
+  }
   // Natural fog: the clearing is cut through the veil using a wide,
   // feathered alpha mask. No luminous outline or polygon stroke.
   // Keep the transition proportional to the map viewport, so it remains
