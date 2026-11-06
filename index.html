@@ -5636,26 +5636,8 @@ function renderAttractSlides(){
           index;
 
 
-        if(slide.file === "hint_reveal"){
-          el.classList.add("hint-feature-slide");
-          el.innerHTML = `
-            <div class="hint-feature-brand">NM<span>Group</span></div>
-            <div class="hint-feature-content">
-              <div class="hint-feature-eyebrow">UTILITY GEO GUESS · NEW FEATURE</div>
-              <h2>NEED A <em>HINT?</em></h2>
-              <p>Reveal the map through the fog.</p>
-              <div class="hint-feature-steps">
-                <div><strong>01</strong><span>Reveal a region</span></div>
-                <div><strong>02</strong><span>Narrow it down</span></div>
-                <div><strong>03</strong><span>Get closer</span></div>
-              </div>
-              <div class="hint-feature-cost">3 hints per round · +200 miles each</div>
-              <div class="hint-feature-footer">Every hint adds to your score. Lowest total wins.</div>
-            </div>`;
-        } else {
-          el.style.backgroundImage =
-            `url("screensaver/${slide.file}")`;
-        }
+        el.style.backgroundImage =
+          `url("screensaver/${slide.file}")`;
 
 
         container.appendChild(
