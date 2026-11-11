@@ -923,7 +923,7 @@ button.secondary {
 }
 
 .admin-shell {
-  width:min(980px, calc(100vw - 48px));
+  width:min(1120px, calc(100vw - 48px));
   max-height:calc(100dvh - 48px);
   overflow:auto;
   padding:30px;
@@ -944,6 +944,7 @@ button.secondary {
   justify-content:space-between;
   gap:16px;
   align-items:center;
+  flex-wrap:wrap;
   margin-bottom:22px;
 }
 
@@ -954,6 +955,7 @@ button.secondary {
 }
 
 .admin-section {
+  min-width:0;
   padding:18px;
   border:1px solid rgba(148,163,184,.16);
   border-radius:14px;
@@ -965,6 +967,7 @@ button.secondary {
 }
 
 .admin-field {
+  min-width:0;
   margin:12px 0;
   text-align:left;
 }
@@ -990,9 +993,24 @@ button.secondary {
 
 .admin-inline {
   display:grid;
-  grid-template-columns:1fr 1fr auto;
-  gap:10px;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px 12px;
   align-items:end;
+}
+
+.admin-inline > button {
+  grid-column:1 / -1;
+  justify-self:start;
+}
+
+.admin-field input,
+.admin-field select {
+  min-width:0;
+}
+
+.admin-list-row > div {
+  min-width:0;
+  overflow-wrap:anywhere;
 }
 
 .admin-actions {
@@ -2124,19 +2142,10 @@ function preloadImage(src){
 
 
 async function preloadGameImages(){
-
-  const paths =
-    gameRounds.map(
-      r=>`images/${r.file}`
-    );
-
-
-  return Promise.all(
-    paths.map(
-      preloadImage
-    )
-  );
-
+  // Load the remaining rounds only AFTER the first image is on screen.
+  // A stalled image request must never block the Start button.
+  const paths = gameRounds.slice(1).map(r=>`images/${r.file}`);
+  return Promise.all(paths.map(preloadImage));
 }
 
 
@@ -2325,43 +2334,13 @@ async function startGame(){
     chooseRandomRounds();
 
 
-  const results =
-    await preloadGameImages();
-
-
-  const failed =
-    results.filter(
-      r=>!r.ok
-    );
-
-
-  if(failed.length){
-
-    console.warn(
-      "Some game images did not preload:",
-      failed
-    );
-
-  }
-
-
-  startButton.disabled =
-    false;
-
-
-  document
-    .getElementById("loadingMessage")
-    .innerText =
-      "";
-
-
+  // Do not wait for all five (potentially large) images before opening
+  // the first round. That could leave slower connections stuck on
+  // "Preparing your five images…" indefinitely.
+  startButton.disabled = false;
+  document.getElementById("loadingMessage").innerText = "";
   hideLanding();
-
-
-  currentMode =
-    "playing";
-
-
+  currentMode = "playing";
   showRound();
 
 }
@@ -2485,18 +2464,44 @@ function showRound(){
     "Loading image…";
 
 
-  const begin = ()=>{
+  let imageLoadTimer = null;
+  let imageHandled = false;
 
+  const fail = ()=>{
+    if(imageHandled) return;
+    imageHandled = true;
+    clearTimeout(imageLoadTimer);
     img.onload = null;
+    img.onerror = null;
+    active = false;
+    timer.innerText = "Image failed to load";
+    addRoundResult(null, "unavailable");
+    showRoundPopup(null, "Image unavailable");
+  };
+
+  const begin = ()=>{
+    if(imageHandled) return;
+    imageHandled = true;
+    clearTimeout(imageLoadTimer);
+    img.onload = null;
+    img.onerror = null;
 
     active = true;
     revealUpdate();
-
-    currentMode =
-      "playing";
-
+    currentMode = "playing";
     startTimer();
 
+    // Cache later images in the background, without delaying round one.
+    if(round === 0){
+      setTimeout(()=>{
+        preloadGameImages()
+          .then(results=>{
+            const failed = results.filter(r=>!r.ok);
+            if(failed.length) console.warn("Some game images did not preload:",failed);
+          })
+          .catch(err=>console.warn("Background image preloading failed",err));
+      },200);
+    }
   };
 
 
@@ -2520,36 +2525,13 @@ function showRound(){
       begin;
 
 
-    img.onerror =
-      ()=>{
+    img.onerror = fail;
 
-        img.onload =
-          null;
+    // Network requests occasionally stall without firing load or error.
+    // Advance gracefully rather than leaving the kiosk on "Loading image".
+    imageLoadTimer = setTimeout(fail, 45000);
 
-
-        active =
-          false;
-
-
-        timer.innerText =
-          "Image failed to load";
-
-
-        addRoundResult(
-          null,
-          "unavailable"
-        );
-
-        showRoundPopup(
-          null,
-          "Image unavailable"
-        );
-
-      };
-
-
-    img.src =
-      src;
+    img.src = src;
 
 
     if(
@@ -4494,8 +4476,8 @@ async function renderAdminDashboard(message = ""){
           <div class="admin-inline">
             <div class="admin-field"><label>Start</label><input id="newEventStart" type="date"></div>
             <div class="admin-field"><label>End</label><input id="newEventEnd" type="date"></div>
-            <div class="admin-field"><label>Timezone</label><input id="newEventTimezone" value="America/New_York"></div>
           </div>
+          <div class="admin-field"><label>Timezone</label><input id="newEventTimezone" value="America/New_York"></div>
           <div class="admin-actions"><button class="primary" onclick="addEvent()">Add event</button></div>
         </div>
 
