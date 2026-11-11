@@ -4064,7 +4064,13 @@ async function requestAdminPasswordReset(){
     status.textContent="If that address has an account, a password reset link has been sent. Check your inbox and spam folder.";
   }catch(err){
     console.warn("Password reset email failed",err);
-    status.textContent="Could not send a reset email. Try again later or contact the event administrator.";
+    if(err?.code==="email_address_not_authorized"){
+      status.textContent="Email sending is not configured for this address. Ask the project owner to configure Supabase Auth SMTP.";
+    }else if(err?.status===429 || err?.code==="over_email_send_rate_limit"){
+      status.textContent="Too many reset emails have been requested. Please try again later.";
+    }else{
+      status.textContent="Could not send a reset email. Try again later or contact the event administrator.";
+    }
   }finally{
     button.disabled=false;
   }
