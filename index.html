@@ -839,6 +839,64 @@ button.secondary {
   margin:10px 2px 0;
 }
 
+/* Wider, readable results panel; leaderboard layout is unaffected. */
+.game-complete-card {
+  width:min(960px, calc(100vw - 48px));
+  max-height:calc(100dvh - 48px);
+  overflow-y:auto;
+  padding:30px 36px 28px;
+}
+.game-complete-card .score-subtitle {
+  max-width:700px;
+  margin-bottom:18px;
+}
+.game-complete-card .round-history {
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  max-width:none;
+  gap:12px;
+  margin:20px 0 25px;
+  overflow:visible;
+}
+.game-complete-card .round-history-item {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  min-width:0;
+  padding:16px 10px;
+}
+.game-complete-card .round-history-round {color:#94a3b8;font-size:11px;}
+.game-complete-card .round-history-score {margin:7px 0 4px;font-size:clamp(17px,2vw,23px);}
+.game-complete-card .round-hint-penalty {color:#b7cf80;font-size:12px;line-height:1.35;}
+.game-complete-card .round-history-comment {
+  margin-top:8px;
+  color:var(--brand);
+  font-size:12px;
+  font-weight:800;
+  line-height:1.4;
+  white-space:normal;
+  overflow:visible;
+  text-overflow:clip;
+  overflow-wrap:anywhere;
+}
+.game-complete-card .end-form {max-width:720px;}
+.game-complete-card .end-form-fields {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+}
+.game-complete-card .end-form-fields input {min-width:0;}
+@media(max-width:850px) {
+  .game-complete-card .round-history {grid-template-columns:repeat(3,minmax(0,1fr));}
+}
+@media(max-width:600px) {
+  .game-complete-card {padding:24px 18px;}
+  .game-complete-card .round-history {grid-template-columns:repeat(2,minmax(0,1fr));}
+  .game-complete-card .end-form-fields {grid-template-columns:1fr;gap:0;}
+}
+@media(max-width:380px) {
+  .game-complete-card .round-history {grid-template-columns:1fr;}
+}
+
 .leaderboard-list {
   display:grid;
   gap:9px;
@@ -3034,7 +3092,7 @@ function renderRoundHistory(){
                 : kmToMiles(item.scoredDistance).toFixed(1) + " mi"
               }
             </div>
-            <div class="round-hint-penalty" style="font-size:12px;color:#b7cf80">${item.hints ? item.hints + " hint(s) · +" + (item.hints*200) + " mi" : "No hints"}</div>
+            <div class="round-hint-penalty">${item.hints ? item.hints + " hint(s) · +" + (item.hints*200) + " mi" : "No hints"}</div>
             <div
               class="round-history-comment"
               title="${escapeHtml(item.comment)}"
@@ -3220,7 +3278,7 @@ function showFinalForm(){
   finalForm.style.display = "flex";
 
   finalForm.innerHTML = `
-    <div class="end-card">
+    <div class="end-card game-complete-card">
       <div class="end-kicker">Game complete</div>
 
       <div class="final-score">
@@ -3232,13 +3290,14 @@ function showFinalForm(){
       </div>
 
       <div class="score-subtitle">
-        Your total distance from all five survey locations. Lower is better.
+        Combined distance and hint penalties across all five rounds. Lower is better.
       </div>
 
       ${renderRoundHistory()}
 
       <div class="end-form">
-        <input
+        <div class="end-form-fields">
+          <input
           id="name"
           type="text"
           maxlength="60"
@@ -3253,6 +3312,7 @@ function showFinalForm(){
           placeholder="Email"
           autocomplete="email"
         >
+        </div>
 
         <div class="consent">
           <input type="checkbox" id="consent">
