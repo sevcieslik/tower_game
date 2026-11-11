@@ -1412,7 +1412,7 @@ button.secondary {
       <div class="rule-item">
         <div class="rule-icon">04</div>
         <div class="rule-text">
-          Reveal up to 3 fog hints per round, +200 miles each. Lowest total wins
+          Use up to 3 fog hints across all 5 rounds, +200 miles each. Lowest total wins
         </div>
       </div>
 
@@ -2170,7 +2170,7 @@ function resetGame(){
 
 
   removeVisuals();
-  revealHide();
+  revealResetGame();
 
   resetImageView();
 
@@ -2276,6 +2276,7 @@ async function startGame(){
   roundResults = [];
   lastPlayerPosition = null;
 
+  revealResetGame();
 
   gameRounds =
     chooseRandomRounds();
@@ -3088,7 +3089,7 @@ function showRoundPopup(
         }
       </div>
 
-      <div style="font-size:15px;color:#c5e84b;margin:8px 0">Hints: ${revealLevel}/3 · Penalty: +${revealLevel*200} mi · Round score: ${d === null ? "—" : (kmToMiles(d)+revealLevel*200).toFixed(1)+" mi"}</div>
+      <div style="font-size:15px;color:#c5e84b;margin:8px 0">Hints this round: ${revealLevel} · Game hints used: ${revealGameHintsUsed}/3 · Round penalty: +${revealLevel*200} mi · Round score: ${d === null ? "—" : (kmToMiles(d)+revealLevel*200).toFixed(1)+" mi"}</div>
       <div class="round-total">
         ${
           status === "timeout"
@@ -4188,7 +4189,10 @@ async function renderAdminDashboard(message = ""){
           <div class="end-kicker">Utility Geo Guess</div>
           <h2>Admin</h2>
         </div>
-        <button class="secondary" onclick="logoutAndCloseAdmin()">Log out</button>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <button class="secondary" onclick="closeAdmin()">Close panel</button>
+          <button class="secondary" onclick="logoutAndCloseAdmin()">Log out</button>
+        </div>
       </div>
 
       <div class="admin-grid">
@@ -4342,7 +4346,7 @@ async function renderAdminDashboard(message = ""){
 
       <div class="admin-status" id="adminStatus">${escapeHtml(message)}</div>
       <div class="admin-actions">
-        <button class="secondary" onclick="logoutAndCloseAdmin()">Close admin</button>
+        <button class="secondary" onclick="closeAdmin()">Close panel</button>
       </div>
     </div>
   `;

@@ -1,6 +1,8 @@
 
 /* Map Reveal: soft-edged geographic fog. No external services required. */
 const REVEAL_COST_MI = 200;
+const REVEAL_GAME_HINT_LIMIT = 3;
+let revealGameHintsUsed = 0;
 let revealLevel = 0;
 let revealCanvas = null;
 let revealCtx = null;
@@ -41,7 +43,7 @@ function revealSetup(){
 
   const controls=document.createElement('div');
   controls.id='revealControls';
-  controls.innerHTML='<button id="revealButton" type="button">Reveal map · +200 mi</button><span id="revealStatus">0/3 hints · +0 mi</span>';
+  controls.innerHTML='<button id="revealButton" type="button">Reveal map · +200 mi</button><span id="revealStatus">Game hints: 0/3 · +0 mi</span>';
   Object.assign(controls.style,{
     position:'absolute',
     bottom:'34px',
@@ -109,9 +111,21 @@ function revealBegin(r){
   revealRegions=null;
   revealLevel=0;
   revealPenaltiesKm=0;
+  // The current round starts with a fresh reveal, but the game-wide
+  // hint budget is intentionally not reset here.
   document.getElementById('revealControls').style.display='flex';
   revealCanvas.style.display='none';
   revealUpdate();
+}
+
+function revealResetGame(){
+  // Only restarting/starting a full five-round game restores the budget.
+  revealGameHintsUsed=0;
+  revealLevel=0;
+  revealPenaltiesKm=0;
+  revealCurrent=null;
+  revealRegions=null;
+  revealHide();
 }
 
 function revealHide(){
@@ -127,10 +141,11 @@ function revealUpdate(){
   const status=document.getElementById('revealStatus');
   if(!b||!status)return;
 
-  b.disabled=revealLevel>=3||!active;
+  b.disabled=revealGameHintsUsed>=REVEAL_GAME_HINT_LIMIT||!active;
   b.style.opacity=b.disabled?'.5':'1';
-  b.textContent=revealLevel>=3?'All hints used':'Reveal map · +200 mi';
-  status.textContent=revealLevel+'/3 hints · +'+(revealLevel*REVEAL_COST_MI)+' mi';
+  b.textContent=revealGameHintsUsed>=REVEAL_GAME_HINT_LIMIT?'All hints used':'Reveal map · +200 mi';
+  status.textContent='Game hints: '+revealGameHintsUsed+'/'+REVEAL_GAME_HINT_LIMIT+
+    ' · +'+(revealGameHintsUsed*REVEAL_COST_MI)+' mi';
 }
 
 // Geographic hints are intersections of independently generated shapes.
@@ -272,9 +287,10 @@ function revealRegion(){
 }
 
 function revealBuy(){
-  if(!active||!revealCurrent||revealLevel>=3)return;
+  if(!active||!revealCurrent||revealLevel>=3||revealGameHintsUsed>=REVEAL_GAME_HINT_LIMIT)return;
 
   revealLevel++;
+  revealGameHintsUsed++;
   revealPenaltiesKm+=revealMilesToKm(REVEAL_COST_MI);
   revealCanvas.style.display='block';
   revealUpdate();
