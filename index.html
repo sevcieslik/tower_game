@@ -1512,6 +1512,10 @@ const ROUND_TIME = 45;
 const IDLE_TIMEOUT_MS = 60000;
 const DEFAULT_SLIDE_MS = 8000;
 
+// Shared home camera for the initial view and every new round.
+const INITIAL_MAP_CENTER = [-98, 49];
+const INITIAL_MAP_ZOOM = 3.35;
+
 // Maximum possible great-circle distance on Earth.
 // Used as the penalty when a player does not answer a round.
 const EARTH_RADIUS_KM = 6371;
@@ -1869,12 +1873,9 @@ async function clearOfflineAssets(){
       style:
         "mapbox://styles/mapbox/light-v11",
 
-      center:[
-        -98,
-        55
-      ],
+      center:INITIAL_MAP_CENTER,
 
-      zoom:3,
+      zoom:INITIAL_MAP_ZOOM,
 
       minZoom:2
 
@@ -2326,6 +2327,31 @@ async function startGame(){
    ROUND
    ========================================================= */
 
+function resetMapForNewRound(){
+  if(!map)return;
+
+  const home = {
+    center:INITIAL_MAP_CENTER,
+    zoom:INITIAL_MAP_ZOOM,
+    bearing:0,
+    pitch:0
+  };
+
+  // Finish any camera transition from the previous round first.
+  map.stop();
+  if(round === 0){
+    map.jumpTo(home);
+  }else{
+    // Smoothly zoom out to show the USA and Canada again.
+    map.easeTo({
+      ...home,
+      duration:900,
+      easing:t=>1-Math.pow(1-t,3),
+      essential:true
+    });
+  }
+}
+
 function showRound(){
 
   active = false;
@@ -2357,6 +2383,7 @@ function showRound(){
 
 
   removeVisuals();
+  resetMapForNewRound();
 
   resetImageView();
 
