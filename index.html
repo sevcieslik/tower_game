@@ -3944,6 +3944,8 @@ function exportCsv(key){
 
 async function openAdmin(){
   clearTimeout(idleTimer);
+  // While Admin is open, the kiosk idle/screensaver timer must not cover it.
+  currentMode = "admin";
 
   document.getElementById("leaderboardPopup").style.display = "none";
   document.getElementById("landingScreen").classList.add("hidden");
@@ -4134,7 +4136,7 @@ function clearAdminRecoveryUrl(){
 async function cancelAdminRecovery(){
   await db.auth.signOut();
   clearAdminRecoveryUrl();
-  renderAdminLogin();
+  closeAdmin();
 }
 
 async function saveRecoveredAdminPassword(){
@@ -4343,7 +4345,7 @@ async function changeAdminPassword(){
 
 async function cancelPasswordChange(){
   await db.auth.signOut();
-  renderAdminLogin("Password change cancelled.");
+  closeAdmin();
 }
 
 async function loadAdminData(){
@@ -4896,8 +4898,36 @@ async function logoutAndCloseAdmin(){
 }
 
 function closeAdmin(){
-  document.getElementById("adminScreen").style.display = "none";
-  resetGame();
+  // Close the panel without signing the admin out. Cancel during a recovery
+  // flow is handled separately by cancelAdminRecovery(), which signs out.
+  const screen = document.getElementById("adminScreen");
+  screen.style.display = "none";
+
+  // If the kiosk screensaver opened while Admin was visible, stop it before
+  // restoring the landing screen.
+  if(attractActive){
+    clearTimeout(attractTimer);
+    stopAttractStats();
+    attractActive = false;
+    document.getElementById("attractMode").style.display = "none";
+  }
+
+  if(adminRecoveryUrlRequested || adminRecoveryVerified){
+    clearAdminRecoveryUrl();
+  }
+
+  try{
+    resetGame();
+  }catch(err){
+    console.error("Could not fully reset the game after closing Admin",err);
+  }finally{
+    // Always recover the start screen, even if a cleanup step fails. Without
+    // this, the user can see the empty survey pane and the Mapbox map.
+    document.getElementById("landingScreen").classList.remove("hidden");
+    screen.style.display = "none";
+    currentMode = "rules";
+    scheduleIdle();
+  }
 }
 
 
@@ -5920,7 +5950,9 @@ function scheduleIdle(){
   if(
     attractActive ||
     currentMode === "playing" ||
+    currentMode === "admin" ||
     currentMode === "adminRecovery" ||
+    document.getElementById("adminScreen")?.style.display === "flex" ||
     adminRecoveryUrlRequested
   ){
     return;
@@ -5942,6 +5974,11 @@ function scheduleIdle(){
 
 
 function enterAttractMode(){
+  if(document.getElementById("adminScreen")?.style.display === "flex" ||
+     currentMode === "admin" || currentMode === "adminRecovery" ||
+     adminRecoveryUrlRequested){
+    return;
+  }
 
   clearInterval(
     timerId
