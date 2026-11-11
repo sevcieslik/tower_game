@@ -1540,6 +1540,49 @@ const db = window.supabase.createClient(
   SUPABASE_PUBLISHABLE_KEY
 );
 
+// Password reset links return to this page with ?admin-recovery=1.
+// A valid PASSWORD_RECOVERY event is required before accepting a new password.
+let adminRecoveryUrlRequested =
+  new URLSearchParams(window.location.search).get("admin-recovery") === "1";
+let adminRecoveryVerified = false;
+
+db.auth.onAuthStateChange((event,session)=>{
+  if(event !== "PASSWORD_RECOVERY")return;
+  adminRecoveryVerified = true;
+
+  // Run Supabase queries outside the auth callback to avoid an auth lock.
+  setTimeout(async ()=>{
+    if(!session?.user){
+      renderAdminRecoveryError("Could not verify this recovery link.");
+      return;
+    }
+
+    try {
+      const {data:isAdmin,error} = await db.rpc("is_admin");
+      if(error || !isAdmin){
+        await db.auth.signOut();
+        renderAdminRecoveryError("This account does not have administrator access.");
+        return;
+      }
+
+      renderAdminRecoveredPasswordForm();
+    } catch(err) {
+      console.error("Admin recovery verification failed",err);
+      renderAdminRecoveryError("Could not verify administrator access. Try the link again.");
+    }
+  },0);
+});
+
+if(adminRecoveryUrlRequested){
+  // Also handle expired/invalid links, for which no recovery event is emitted.
+  setTimeout(()=>{
+    // Do not re-open the Admin panel after a user has cancelled recovery.
+    if(adminRecoveryUrlRequested && !adminRecoveryVerified){
+      renderAdminRecoveryError("This recovery link is invalid or has expired. Request another link.");
+    }
+  },6000);
+}
+
 const DEVICE_KEY_STORAGE = "utility-geo-guess-device-key";
 const PENDING_SCORES_STORAGE = "utility-geo-guess-pending-scores";
 
@@ -3902,6 +3945,8 @@ function exportCsv(key){
 
 async function openAdmin(){
   clearTimeout(idleTimer);
+  // While Admin is open, the kiosk idle/screensaver timer must not cover it.
+  currentMode = "admin";
 
   document.getElementById("leaderboardPopup").style.display = "none";
   document.getElementById("landingScreen").classList.add("hidden");
@@ -3953,8 +3998,195 @@ function renderAdminLogin(message = ""){
         <button class="primary" onclick="adminLogin()">Log in</button>
         <button class="secondary" onclick="closeAdmin()">Cancel</button>
       </div>
+
+      <div style="display:flex;justify-content:center;margin-top:12px;">
+        <button type="button" class="secondary"
+          style="font-size:12px;padding:7px 14px;width:auto;"
+          onclick="renderForgotAdminPassword()">
+          Forgot password?
+        </button>
+      </div>
     </div>
   `;
+}
+
+function showAdminRecoveryShell(){
+  clearTimeout(idleTimer);
+  currentMode = "adminRecovery";
+  if(attractActive){
+    clearTimeout(attractTimer);
+    stopAttractStats();
+    attractActive = false;
+    document.getElementById("attractMode").style.display = "none";
+  }
+  document.getElementById("landingScreen").classList.add("hidden");
+  const screen=document.getElementById("adminScreen");
+  screen.style.display="flex";
+  return screen;
+}
+
+function renderForgotAdminPassword(message=""){
+  const existingEmail=document.getElementById("adminEmail")?.value?.trim() || "";
+  const screen=showAdminRecoveryShell();
+  screen.innerHTML=`
+    <div class="admin-shell admin-login">
+      <div class="admin-header">
+        <div>
+          <div class="end-kicker">Utility Geo Guess</div>
+          <h2>Reset admin password</h2>
+        </div>
+      </div>
+      <p class="admin-muted">Enter your administrator email address. We will send a link to set a new password.</p>
+      <input id="adminResetEmail" type="email" autocomplete="email"
+        placeholder="Admin email" value="${escapeHtml(existingEmail)}">
+      <div class="admin-status" id="adminResetStatus" role="status">${escapeHtml(message)}</div>
+      <div class="button-row">
+        <button class="primary" id="adminResetSendButton"
+          onclick="requestAdminPasswordReset()">Send reset link</button>
+        <button class="secondary" onclick="renderAdminLogin()">Back to login</button>
+      </div>
+    </div>
+  `;
+}
+
+async function requestAdminPasswordReset(){
+  const input=document.getElementById("adminResetEmail");
+  const status=document.getElementById("adminResetStatus");
+  const button=document.getElementById("adminResetSendButton");
+  if(!input?.checkValidity() || !input.value.trim()){
+    status.textContent="Enter a valid email address.";
+    return;
+  }
+
+  button.disabled=true;
+  status.textContent="Sending reset link…";
+  try{
+    const url=new URL(window.location.pathname,window.location.origin);
+    url.searchParams.set("admin-recovery","1");
+    const {error}=await db.auth.resetPasswordForEmail(input.value.trim(),{
+      redirectTo:url.toString()
+    });
+    if(error)throw error;
+    // Do not disclose whether an account exists for the address.
+    status.textContent="If that address has an account, a password reset link has been sent. Check your inbox and spam folder.";
+  }catch(err){
+    console.warn("Password reset email failed",err);
+    if(err?.code==="email_address_not_authorized"){
+      status.textContent="Email sending is not configured for this address. Ask the project owner to configure Supabase Auth SMTP.";
+    }else if(err?.status===429 || err?.code==="over_email_send_rate_limit"){
+      status.textContent="Too many reset emails have been requested. Please try again later.";
+    }else{
+      status.textContent="Could not send a reset email. Try again later or contact the event administrator.";
+    }
+  }finally{
+    button.disabled=false;
+  }
+}
+
+function renderAdminRecoveredPasswordForm(){
+  const screen=showAdminRecoveryShell();
+  screen.innerHTML=`
+    <div class="admin-shell admin-login">
+      <div class="admin-header">
+        <div>
+          <div class="end-kicker">Utility Geo Guess</div>
+          <h2>Choose a new password</h2>
+        </div>
+      </div>
+      <p class="admin-muted">Your reset link has been verified. Set a new password for your administrator account.</p>
+      <input id="adminRecoveryNewPassword" type="password"
+        autocomplete="new-password" placeholder="New password" minlength="8">
+      <input id="adminRecoveryConfirmPassword" type="password"
+        autocomplete="new-password" placeholder="Confirm new password" minlength="8">
+      <div class="admin-status" id="adminRecoveryStatus" role="status"></div>
+      <div class="button-row">
+        <button class="primary" id="adminRecoverySaveButton"
+          onclick="saveRecoveredAdminPassword()">Save new password</button>
+        <button class="secondary" onclick="cancelAdminRecovery()">Cancel</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderAdminRecoveryError(message){
+  const screen=showAdminRecoveryShell();
+  screen.innerHTML=`
+    <div class="admin-shell admin-login">
+      <div class="admin-header">
+        <div>
+          <div class="end-kicker">Utility Geo Guess</div>
+          <h2>Password recovery</h2>
+        </div>
+      </div>
+      <div class="admin-status" role="alert">${escapeHtml(message)}</div>
+      <div class="button-row">
+        <button class="primary" onclick="renderForgotAdminPassword()">Request another link</button>
+        <button class="secondary" onclick="cancelAdminRecovery()">Back to login</button>
+      </div>
+    </div>
+  `;
+}
+
+function clearAdminRecoveryUrl(){
+  adminRecoveryUrlRequested=false;
+  adminRecoveryVerified=false;
+  // Strip query/hash parameters containing recovery state or auth credentials.
+  window.history.replaceState(null,"",window.location.pathname);
+}
+
+async function cancelAdminRecovery(){
+  await db.auth.signOut();
+  clearAdminRecoveryUrl();
+  closeAdmin();
+}
+
+async function saveRecoveredAdminPassword(){
+  const status=document.getElementById("adminRecoveryStatus");
+  const button=document.getElementById("adminRecoverySaveButton");
+  const password=document.getElementById("adminRecoveryNewPassword")?.value || "";
+  const confirmation=document.getElementById("adminRecoveryConfirmPassword")?.value || "";
+
+  if(!adminRecoveryVerified){
+    status.textContent="Recovery link not verified. Request a new link.";
+    return;
+  }
+  if(password.length<8){
+    status.textContent="Password must be at least 8 characters.";
+    return;
+  }
+  if(password!==confirmation){
+    status.textContent="The passwords do not match.";
+    return;
+  }
+
+  button.disabled=true;
+  status.textContent="Updating password…";
+  try{
+    const {data:{user}}=await db.auth.getUser();
+    if(!user)throw new Error("Recovery session expired. Request another link.");
+
+    const {data:isAdmin,error:adminError}=await db.rpc("is_admin");
+    if(adminError || !isAdmin)throw new Error("Administrator access could not be verified.");
+
+    const {error}=await db.auth.updateUser({password});
+    if(error)throw error;
+
+    // Resetting a temporary password also fulfils first-login password change.
+    const {error:flagError}=await db.from("admins")
+      .update({must_change_password:false})
+      .eq("user_id",user.id);
+    if(flagError)console.warn("Could not clear first-login password flag",flagError);
+
+    await db.auth.signOut();
+    clearAdminRecoveryUrl();
+    renderAdminLogin(flagError
+      ? "Password updated. Log in with your new password. You may be asked to change it again."
+      : "Password updated. Log in with your new password.");
+  }catch(err){
+    console.error("Password recovery update failed",err);
+    status.textContent=err?.message || "Could not update password. Try again.";
+    button.disabled=false;
+  }
 }
 
 async function adminLogin(){
@@ -4114,7 +4346,7 @@ async function changeAdminPassword(){
 
 async function cancelPasswordChange(){
   await db.auth.signOut();
-  renderAdminLogin("Password change cancelled.");
+  closeAdmin();
 }
 
 async function loadAdminData(){
@@ -4667,8 +4899,36 @@ async function logoutAndCloseAdmin(){
 }
 
 function closeAdmin(){
-  document.getElementById("adminScreen").style.display = "none";
-  resetGame();
+  // Close the panel without signing the admin out. Cancel during a recovery
+  // flow is handled separately by cancelAdminRecovery(), which signs out.
+  const screen = document.getElementById("adminScreen");
+  screen.style.display = "none";
+
+  // If the kiosk screensaver opened while Admin was visible, stop it before
+  // restoring the landing screen.
+  if(attractActive){
+    clearTimeout(attractTimer);
+    stopAttractStats();
+    attractActive = false;
+    document.getElementById("attractMode").style.display = "none";
+  }
+
+  if(adminRecoveryUrlRequested || adminRecoveryVerified){
+    clearAdminRecoveryUrl();
+  }
+
+  try{
+    resetGame();
+  }catch(err){
+    console.error("Could not fully reset the game after closing Admin",err);
+  }finally{
+    // Always recover the start screen, even if a cleanup step fails. Without
+    // this, the user can see the empty survey pane and the Mapbox map.
+    document.getElementById("landingScreen").classList.remove("hidden");
+    screen.style.display = "none";
+    currentMode = "rules";
+    scheduleIdle();
+  }
 }
 
 
@@ -5690,7 +5950,11 @@ function scheduleIdle(){
 
   if(
     attractActive ||
-    currentMode === "playing"
+    currentMode === "playing" ||
+    currentMode === "admin" ||
+    currentMode === "adminRecovery" ||
+    document.getElementById("adminScreen")?.style.display === "flex" ||
+    adminRecoveryUrlRequested
   ){
     return;
   }
@@ -5711,6 +5975,11 @@ function scheduleIdle(){
 
 
 function enterAttractMode(){
+  if(document.getElementById("adminScreen")?.style.display === "flex" ||
+     currentMode === "admin" || currentMode === "adminRecovery" ||
+     adminRecoveryUrlRequested){
+    return;
+  }
 
   clearInterval(
     timerId
