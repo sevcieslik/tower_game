@@ -3996,9 +3996,13 @@ function renderAdminLogin(message = ""){
         <button class="secondary" onclick="closeAdmin()">Cancel</button>
       </div>
 
-      <button type="button" class="secondary" style="margin-top:12px" onclick="renderForgotAdminPassword()">
-        Forgot password?
-      </button>
+      <div style="display:flex;justify-content:center;margin-top:12px;">
+        <button type="button" class="secondary"
+          style="font-size:12px;padding:7px 14px;width:auto;"
+          onclick="renderForgotAdminPassword()">
+          Forgot password?
+        </button>
+      </div>
     </div>
   `;
 }
