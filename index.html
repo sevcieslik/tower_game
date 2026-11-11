@@ -3092,7 +3092,7 @@ function renderRoundHistory(){
                 : kmToMiles(item.scoredDistance).toFixed(1) + " mi"
               }
             </div>
-            <div class="round-hint-penalty" style="font-size:12px;color:#b7cf80">${item.hints ? item.hints + " hint(s) · +" + (item.hints*200) + " mi" : "No hints"}</div>
+            <div class="round-hint-penalty">${item.hints ? item.hints + " hint(s) · +" + (item.hints*200) + " mi" : "No hints"}</div>
             <div
               class="round-history-comment"
               title="${escapeHtml(item.comment)}"
@@ -3278,7 +3278,7 @@ function showFinalForm(){
   finalForm.style.display = "flex";
 
   finalForm.innerHTML = `
-    <div class="end-card">
+    <div class="end-card game-complete-card">
       <div class="end-kicker">Game complete</div>
 
       <div class="final-score">
@@ -3290,13 +3290,14 @@ function showFinalForm(){
       </div>
 
       <div class="score-subtitle">
-        Your total distance from all five survey locations. Lower is better.
+        Combined distance and hint penalties across all five rounds. Lower is better.
       </div>
 
       ${renderRoundHistory()}
 
       <div class="end-form">
-        <input
+        <div class="end-form-fields">
+          <input
           id="name"
           type="text"
           maxlength="60"
@@ -3311,6 +3312,7 @@ function showFinalForm(){
           placeholder="Email"
           autocomplete="email"
         >
+        </div>
 
         <div class="consent">
           <input type="checkbox" id="consent">
