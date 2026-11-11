@@ -1576,7 +1576,8 @@ db.auth.onAuthStateChange((event,session)=>{
 if(adminRecoveryUrlRequested){
   // Also handle expired/invalid links, for which no recovery event is emitted.
   setTimeout(()=>{
-    if(!adminRecoveryVerified){
+    // Do not re-open the Admin panel after a user has cancelled recovery.
+    if(adminRecoveryUrlRequested && !adminRecoveryVerified){
       renderAdminRecoveryError("This recovery link is invalid or has expired. Request another link.");
     }
   },6000);
