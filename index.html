@@ -897,6 +897,14 @@ button.secondary {
   .game-complete-card .round-history {grid-template-columns:1fr;}
 }
 
+.leaderboard-local-day {
+  margin:-2px 0 18px;
+  color:#94a3b8;
+  font-size:12px;
+  text-align:center;
+  letter-spacing:.02em;
+}
+
 .leaderboard-list {
   display:grid;
   gap:9px;
@@ -3677,6 +3685,18 @@ async function saveScore(key){
    LEADERBOARD
    ========================================================= */
 
+// Use the browser's time zone, not the device clock, to select the local
+// calendar day. Supabase uses its own server time to calculate day bounds.
+function getLeaderboardTimeZone(){
+  try{
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  }
+  catch(err){
+    console.warn("Could not detect device time zone; using UTC",err);
+    return "UTC";
+  }
+}
+
 async function showLeaderboard(
   key = null,
   currentEntryId = null,
@@ -3695,14 +3715,16 @@ async function showLeaderboard(
   let data = [];
   let loadError = null;
   let todayEnabled = false;
+  let todayLocalDate = null;
+  let todayTimeZone = null;
 
-  // "Today" is a single cross-device ranking. The server decides whether
-  // Today is enabled in Game setup and returns only public scoreboard fields.
-  // Unlike the legacy RPC, this does not filter by event, kiosk or source.
+  // "Today" includes all sources/events/kiosks, but its day is defined
+  // by the current viewer's time zone. The database uses server time.
   try {
     const response = await db.rpc("get_public_today_leaderboard", {
       p_limit: 5,
-      p_entry_id: currentEntryId || null
+      p_entry_id: currentEntryId || null,
+      p_timezone: getLeaderboardTimeZone()
     });
 
     if(response.error) throw response.error;
@@ -3711,6 +3733,8 @@ async function showLeaderboard(
     todayEnabled = today?.enabled === true;
 
     if(todayEnabled){
+      todayLocalDate = typeof today.date === "string" ? today.date : null;
+      todayTimeZone = typeof today.timezone === "string" ? today.timezone : null;
       data = Array.isArray(today.rows) ? today.rows : [];
       // Do not show a stale event/kiosk position or prize information
       // alongside a cross-device daily leaderboard.
@@ -3718,9 +3742,13 @@ async function showLeaderboard(
     }
   }
   catch(err){
-    // Allows existing Global and Current event leaderboards to continue
-    // working until the SQL migration is installed in Supabase.
-    console.warn("Global Today leaderboard unavailable",err);
+    console.warn("Local Today leaderboard unavailable",err);
+    // Do not pretend to display the global all-time ranking when Today
+    // is selected but the new SQL function is not installed yet.
+    if(gameConfig.leaderboard_scope === "daily"){
+      todayEnabled = true;
+      loadError = err;
+    }
   }
 
   if(!todayEnabled){
@@ -3846,6 +3874,10 @@ async function showLeaderboard(
           <h2>Leaderboard</h2>
         `
       }
+
+      ${todayEnabled && todayLocalDate && todayTimeZone
+        ? `<div class="leaderboard-local-day">Local day: ${escapeHtml(todayLocalDate)} · ${escapeHtml(todayTimeZone)}</div>`
+        : ""}
 
       ${positionHtml}
       ${prizeHtml}
@@ -4506,7 +4538,7 @@ async function renderAdminDashboard(message = ""){
           <div class="admin-field">
             <label>Leaderboard scope</label>
             <select id="adminLeaderboardScope">
-              <option value="daily" ${settings.leaderboard_scope==="daily"?"selected":""}>Today (all players, Denver time)</option>
+              <option value="daily" ${settings.leaderboard_scope==="daily"?"selected":""}>Today (all players, device local time)</option>
               <option value="event" ${settings.leaderboard_scope==="event"?"selected":""}>Current event</option>
               <option value="global" ${settings.leaderboard_scope==="global"?"selected":""}>Global</option>
               <option value="hidden" ${settings.leaderboard_scope==="hidden"?"selected":""}>Hidden</option>
