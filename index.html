@@ -3694,39 +3694,59 @@ async function showLeaderboard(
 
   let data = [];
   let loadError = null;
+  let todayEnabled = false;
 
+  // "Today" is a single cross-device ranking. The server decides whether
+  // Today is enabled in Game setup and returns only public scoreboard fields.
+  // Unlike the legacy RPC, this does not filter by event, kiosk or source.
   try {
-    const response = await db.rpc(
-      "get_leaderboard_for_device",
-      {
-        p_device_key: DEVICE_KEY,
-        p_limit: 5
-      }
-    );
+    const response = await db.rpc("get_public_today_leaderboard", {
+      p_limit: 5,
+      p_entry_id: currentEntryId || null
+    });
 
     if(response.error) throw response.error;
-    data = response.data || [];
+
+    const today = response.data;
+    todayEnabled = today?.enabled === true;
+
+    if(todayEnabled){
+      data = Array.isArray(today.rows) ? today.rows : [];
+      // Do not show a stale event/kiosk position or prize information
+      // alongside a cross-device daily leaderboard.
+      playerPosition = today.position || null;
+    }
   }
   catch(err){
-    console.error("Leaderboard load failed", err);
-    loadError = err;
+    // Allows existing Global and Current event leaderboards to continue
+    // working until the SQL migration is installed in Supabase.
+    console.warn("Global Today leaderboard unavailable",err);
   }
 
-
-  if(
-    currentEntryId &&
-    !playerPosition
-  ){
-    playerPosition =
-      await getPlayerPosition(
-        currentEntryId
+  if(!todayEnabled){
+    try {
+      const response = await db.rpc(
+        "get_leaderboard_for_device",
+        {
+          p_device_key: DEVICE_KEY,
+          p_limit: 5
+        }
       );
-  }
+      if(response.error) throw response.error;
+      data = response.data || [];
+    }
+    catch(err){
+      console.error("Leaderboard load failed", err);
+      loadError = err;
+    }
 
+    if(currentEntryId && !playerPosition){
+      playerPosition = await getPlayerPosition(currentEntryId);
+    }
+  }
 
   if(playerPosition){
-    lastPlayerPosition =
-      playerPosition;
+    lastPlayerPosition = playerPosition;
   }
 
 
@@ -3743,15 +3763,17 @@ async function showLeaderboard(
       : `<div class="leaderboard-empty">No scores yet. Be the first.</div>`;
 
 
-  const scopeLabel = !gameConfig.is_kiosk
-    ? "Global"
-    : gameConfig.leaderboard_scope === "daily"
-      ? "Today"
-      : gameConfig.leaderboard_scope === "event"
-        ? (gameConfig.event_name || "Current event")
-        : gameConfig.leaderboard_scope === "hidden"
-          ? "Hidden"
-          : "Global";
+  const scopeLabel = todayEnabled
+    ? "Today"
+    : !gameConfig.is_kiosk
+      ? "Global"
+      : gameConfig.leaderboard_scope === "daily"
+        ? "Today"
+        : gameConfig.leaderboard_scope === "event"
+          ? (gameConfig.event_name || "Current event")
+          : gameConfig.leaderboard_scope === "hidden"
+            ? "Hidden"
+            : "Global";
 
 
   const hasRank =
@@ -3792,10 +3814,10 @@ async function showLeaderboard(
     : "";
 
 
+  // The old prize calculation is scoped by device/event. Do not apply it
+  // to the shared daily table until prize rules are explicitly aligned.
   const prizeMessage =
-    getPrizeMessage(
-      playerPosition
-    );
+    todayEnabled ? "" : getPrizeMessage(playerPosition);
 
 
   const prizeHtml =
@@ -4484,7 +4506,7 @@ async function renderAdminDashboard(message = ""){
           <div class="admin-field">
             <label>Leaderboard scope</label>
             <select id="adminLeaderboardScope">
-              <option value="daily" ${settings.leaderboard_scope==="daily"?"selected":""}>Today</option>
+              <option value="daily" ${settings.leaderboard_scope==="daily"?"selected":""}>Today (all players, Denver time)</option>
               <option value="event" ${settings.leaderboard_scope==="event"?"selected":""}>Current event</option>
               <option value="global" ${settings.leaderboard_scope==="global"?"selected":""}>Global</option>
               <option value="hidden" ${settings.leaderboard_scope==="hidden"?"selected":""}>Hidden</option>
