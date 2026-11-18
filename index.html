@@ -3588,7 +3588,7 @@ async function syncPendingScores(){
   const remaining = [];
 
   for(const item of pending){
-    const { error } = await db.rpc("submit_game_score", item);
+    const { error } = await db.rpc("submit_game_score_v2", item);
     if(error) remaining.push(item);
   }
 
@@ -3636,7 +3636,7 @@ async function saveScore(key){
 
   try {
     const { data:entryId, error:saveError } = await db.rpc(
-      "submit_game_score",
+      "submit_game_score_v2",
       payload
     );
 
@@ -4499,7 +4499,10 @@ async function renderAdminDashboard(message = ""){
     ? adminState.kiosks.map(k=>`
         <div class="admin-list-row">
           <div><b>${escapeHtml(k.name)}</b><div class="admin-muted">${escapeHtml(k.device_key)}</div></div>
-          <div>${escapeHtml(k.sales_reps?.name || "Unassigned")}</div>
+          <div>
+            <div>${escapeHtml(k.sales_reps?.name || "Unassigned")}</div>
+            <div class="admin-muted">Event: ${escapeHtml(adminState.events.find(e=>e.id===k.event_id)?.name || "No event")}</div>
+          </div>
           <div>${escapeHtml(k.last_ip || "No IP")}</div>
           <button class="secondary" onclick="loadKioskForEdit('${k.id}')">Edit</button>
         </div>
@@ -4602,14 +4605,12 @@ async function renderAdminDashboard(message = ""){
 
         <div class="admin-section">
           <h3>This device</h3>
-          <div class="admin-muted" style="margin:8px 0 14px;color:${currentKiosk?.active && gameConfig.is_kiosk ? "#b7cf80" : "#fbbf24"}">
+          <div class="admin-muted" style="margin:8px 0 14px;color:${currentKiosk?.active ? "#b7cf80" : "#fbbf24"}">
             ${!currentKiosk
               ? "This browser is NOT registered as a kiosk. Register it here on the same browser used to play."
               : !currentKiosk.active
                 ? "This browser is registered but INACTIVE."
-                : gameConfig.is_kiosk
-                  ? `Recognised as kiosk: ${escapeHtml(currentKiosk.name)}`
-                  : "This browser is registered in the kiosks table, but the game configuration does NOT recognise it. Check get_game_config in Supabase."}
+                : `Kiosk registered: ${escapeHtml(currentKiosk.name)} · Assigned event: ${escapeHtml(adminState.events.find(e=>e.id===currentKiosk.event_id)?.name || "No event")}`}
           </div>
           <div class="admin-field">
             <label>Device ID</label>
@@ -4617,6 +4618,11 @@ async function renderAdminDashboard(message = ""){
           </div>
           <div class="admin-field"><label>Kiosk name</label><input id="currentKioskName" value="${escapeHtml(currentKiosk?.name || "")}" placeholder="Booth Kiosk 01"></div>
           <div class="admin-field"><label>Sales rep</label><select id="currentKioskRep">${repOptions(currentKiosk?.sales_rep_id || null)}</select></div>
+          <div class="admin-field">
+            <label>Assigned event</label>
+            <select id="currentKioskEvent">${eventOptions(currentKiosk ? currentKiosk.event_id : settings.current_event_id)}</select>
+            <div class="admin-muted" style="margin-top:6px">New kiosks default to the current event. Existing kiosks keep their assigned event until changed here.</div>
+          </div>
           <div class="admin-field"><label>IP address (optional/manual)</label><input id="currentKioskIp" value="${escapeHtml(currentKiosk?.last_ip || "")}" placeholder="e.g. 192.0.2.10"></div>
           <div class="admin-actions"><button class="primary" onclick="saveCurrentDevice()">${currentKiosk ? "Update device" : "Register as kiosk"}</button></div>
         </div>
@@ -4832,6 +4838,7 @@ async function addSalesRep(){
 async function saveCurrentDevice(){
   const name = document.getElementById("currentKioskName").value.trim();
   const salesRepId = document.getElementById("currentKioskRep").value || null;
+  const eventId = document.getElementById("currentKioskEvent").value || null;
   const ip = document.getElementById("currentKioskIp").value.trim() || null;
 
   if(!name){
@@ -4846,6 +4853,7 @@ async function saveCurrentDevice(){
     response = await db.from("kiosks").update({
       name,
       sales_rep_id:salesRepId,
+      event_id:eventId,
       last_ip:ip,
       active:true
     }).eq("id",existing.id);
@@ -4855,6 +4863,7 @@ async function saveCurrentDevice(){
       device_key:DEVICE_KEY,
       name,
       sales_rep_id:salesRepId,
+      event_id:eventId,
       last_ip:ip,
       active:true,
       last_seen:new Date().toISOString()
@@ -4881,6 +4890,7 @@ function loadKioskForEdit(id){
     <div class="admin-device-id">${escapeHtml(kiosk.device_key)}</div>
     <div class="admin-field"><label>Name</label><input id="editKioskName" value="${escapeHtml(kiosk.name)}"></div>
     <div class="admin-field"><label>Sales rep</label><select id="editKioskRep">${repOptions(kiosk.sales_rep_id)}</select></div>
+    <div class="admin-field"><label>Assigned event</label><select id="editKioskEvent">${eventOptions(kiosk.event_id)}</select></div>
     <div class="admin-field"><label>IP address</label><input id="editKioskIp" value="${escapeHtml(kiosk.last_ip || "")}"></div>
     <div class="admin-field"><label>Status</label><select id="editKioskActive"><option value="true" ${kiosk.active?"selected":""}>Active</option><option value="false" ${!kiosk.active?"selected":""}>Inactive</option></select></div>
     <div class="admin-actions"><button class="primary" onclick="saveKioskEdit('${kiosk.id}')">Save kiosk</button></div>
@@ -4891,12 +4901,14 @@ function loadKioskForEdit(id){
 async function saveKioskEdit(id){
   const name = document.getElementById("editKioskName").value.trim();
   const salesRepId = document.getElementById("editKioskRep").value || null;
+  const eventId = document.getElementById("editKioskEvent").value || null;
   const ip = document.getElementById("editKioskIp").value.trim() || null;
   const activeValue = document.getElementById("editKioskActive").value === "true";
 
   const { error } = await db.from("kiosks").update({
     name,
     sales_rep_id:salesRepId,
+    event_id:eventId,
     last_ip:ip,
     active:activeValue
   }).eq("id",id);
