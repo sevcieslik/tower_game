@@ -178,6 +178,10 @@ GRANT EXECUTE ON FUNCTION public.submit_game_score_v2(
 
 COMMIT;
 
+-- Reload Supabase/PostgREST schema cache so the newly added RPC and
+-- kiosks.event_id column can be used immediately from the browser.
+NOTIFY pgrst, 'reload schema';
+
 -- Verification (read-only):
 -- SELECT id, name, active, event_id, sales_rep_id
 -- FROM public.kiosks
