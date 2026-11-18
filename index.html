@@ -3695,6 +3695,8 @@ async function showLeaderboard(
   let data = [];
   let loadError = null;
   let todayEnabled = false;
+  let eventEnabled = false;
+  let publicEventName = null;
 
   // "Today" is a single cross-device ranking. The server decides whether
   // Today is enabled in Game setup and returns only public scoreboard fields.
@@ -3723,7 +3725,30 @@ async function showLeaderboard(
     console.warn("Global Today leaderboard unavailable",err);
   }
 
+  // Current event must work for web visitors AND kiosks.
+  // Server-side scope and event ID come from game_settings, not a device key.
   if(!todayEnabled){
+    try {
+      const response = await db.rpc("get_public_event_leaderboard", {
+        p_limit: 5,
+        p_entry_id: currentEntryId || null
+      });
+      if(response.error) throw response.error;
+
+      const event = response.data;
+      eventEnabled = event?.enabled === true;
+      if(eventEnabled){
+        data = Array.isArray(event.rows) ? event.rows : [];
+        publicEventName = event.event_name || "Current event";
+        playerPosition = event.position || null;
+      }
+    }
+    catch(err){
+      console.warn("Public event leaderboard unavailable",err);
+    }
+  }
+
+  if(!todayEnabled && !eventEnabled){
     try {
       const response = await db.rpc(
         "get_leaderboard_for_device",
@@ -3765,7 +3790,9 @@ async function showLeaderboard(
 
   const scopeLabel = todayEnabled
     ? "Today"
-    : !gameConfig.is_kiosk
+    : eventEnabled
+      ? publicEventName
+      : !gameConfig.is_kiosk
       ? "Global"
       : gameConfig.leaderboard_scope === "daily"
         ? "Today"
