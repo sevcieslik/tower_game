@@ -137,9 +137,9 @@ BEGIN
 
   IF FOUND THEN
     v_source := 'kiosk';
-    -- Older kiosks with no event assignment use the current event until
-    -- an admin explicitly assigns one in Admin > This device.
-    v_event_id := COALESCE(v_event_id, v_default_event);
+    -- Respect the kiosk's explicit assignment, including "No event".
+    -- For a newly registered kiosk the Admin UI defaults this to
+    -- game_settings.current_event_id during registration.
 
     UPDATE public.kiosks
     SET last_seen = now()
