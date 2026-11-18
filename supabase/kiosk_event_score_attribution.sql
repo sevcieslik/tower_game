@@ -57,8 +57,8 @@ DECLARE
 BEGIN
   -- Match exactly the existing five-input-parameter function used by
   -- the current application. Fail closed if the signature is unexpected.
-  SELECT count(*), min(f.oid)
-  INTO v_function_count, v_legacy_oid
+  SELECT count(*)
+  INTO v_function_count
   FROM pg_catalog.pg_proc f
   JOIN pg_catalog.pg_namespace ns ON ns.oid = f.pronamespace
   WHERE ns.nspname = 'public'
@@ -74,10 +74,17 @@ BEGIN
       v_function_count;
   END IF;
 
-  SELECT f.proargnames, f.proargtypes
-  INTO v_argnames, v_argtypes
+  SELECT f.oid, f.proargnames, f.proargtypes
+  INTO v_legacy_oid, v_argnames, v_argtypes
   FROM pg_catalog.pg_proc f
-  WHERE f.oid = v_legacy_oid;
+  JOIN pg_catalog.pg_namespace ns ON ns.oid = f.pronamespace
+  WHERE ns.nspname = 'public'
+    AND f.proname = 'submit_game_score'
+    AND f.pronargs = 5
+    AND ARRAY[
+      'p_device_key', 'p_name', 'p_email', 'p_score_km', 'p_consent'
+    ]::text[] <@ f.proargnames
+  LIMIT 1;
 
   -- Build ONLY fixed, schema-qualified SQL. Types are sourced from pg_proc,
   -- never concatenated from player input. No score/email/device values are
