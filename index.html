@@ -4484,6 +4484,7 @@ async function renderAdminDashboard(message = ""){
 
   try {
     await loadAdminData();
+    await refreshGameConfig();
   }
   catch(err){
     console.error(err);
@@ -4601,6 +4602,15 @@ async function renderAdminDashboard(message = ""){
 
         <div class="admin-section">
           <h3>This device</h3>
+          <div class="admin-muted" style="margin:8px 0 14px;color:${currentKiosk?.active && gameConfig.is_kiosk ? "#b7cf80" : "#fbbf24"}">
+            ${!currentKiosk
+              ? "This browser is NOT registered as a kiosk. Register it here on the same browser used to play."
+              : !currentKiosk.active
+                ? "This browser is registered but INACTIVE."
+                : gameConfig.is_kiosk
+                  ? `Recognised as kiosk: ${escapeHtml(currentKiosk.name)}`
+                  : "This browser is registered in the kiosks table, but the game configuration does NOT recognise it. Check get_game_config in Supabase."}
+          </div>
           <div class="admin-field">
             <label>Device ID</label>
             <div class="admin-device-id">${escapeHtml(DEVICE_KEY)}</div>
